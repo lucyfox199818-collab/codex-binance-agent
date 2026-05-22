@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Trading Brain"
+  short_description: "Operate V2 trading through ccxt-mcp"
+  default_prompt: "Use $codex-trading-brain to operate the V2.txt trading brain through ccxt-mcp. Do not use web search or browser/news lookup during V2 live cycles; use only ccxt-mcp plus configured free optional MCP overlays."
