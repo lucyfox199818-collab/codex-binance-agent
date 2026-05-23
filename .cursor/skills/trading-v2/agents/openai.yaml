@@ -1,0 +1,4 @@
+interface:
+  display_name: "交易 V2"
+  short_description: "通过 ccxt-mcp 运行 V2 合约交易、下单复核与审计流程"
+  default_prompt: "使用 $trading-v2 通过 ccxt-mcp 按 V2.txt 运行一轮合约交易流程。"

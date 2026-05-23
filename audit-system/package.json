@@ -1,0 +1,31 @@
+{
+  "name": "trading-audit-system",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Local audit recorder and UI for V2 trading cycles.",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:server": "tsc -p tsconfig.json",
+    "build:ui": "vite build",
+    "build": "npm run build:server && npm run build:ui",
+    "start": "node dist/server/index.js",
+    "dev": "npm run build:ui && tsx src/server/index.ts",
+    "sample": "tsx src/cli/record-sample.ts",
+    "sample:v3": "tsx src/cli/record-v3-sample.ts",
+    "audit": "tsx src/cli/audit-cli.ts"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "vite": "^7.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
+  }
+}

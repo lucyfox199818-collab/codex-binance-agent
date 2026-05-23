@@ -1,17 +1,19 @@
-# Project-Local Skills
+# 项目本地 Skills
 
-This repository keeps project-specific skills under `.cursor/skills/`.
+本仓库把项目专用 skills 放在 `.cursor/skills/` 下。
 
-When the user explicitly mentions `$codex-trading-brain`, `codex-trading-brain`,
-or asks to use the trading brain skill in this repository:
+当用户明确提到 `$trading-v2`、`trading-v2`、`V2.txt`，或要求按 V2 运行交易流程时：
 
-1. Read `.cursor/skills/codex-trading-brain/SKILL.md` before responding or
-   taking action.
-2. Treat that file as the project-local skill body and follow its instructions.
-3. Resolve relative references, scripts, assets, and agent metadata from
-   `.cursor/skills/codex-trading-brain/`.
-4. Do not rely on, create, or update a user-global copy under
-   `~/.codex/skills/codex-trading-brain`.
-5. If the project-local skill file is missing or unreadable, say so clearly and
-   stop before any trading workflow action.
+1. 先读取 `.cursor/skills/trading-v2/SKILL.md`。
+2. 把该文件视为项目本地 skill 正文并遵循其说明。
+3. 相对引用、脚本、资产和 agent 元数据都从 `.cursor/skills/trading-v2/` 解析。
+4. 不要依赖、创建或更新 `~/.codex/skills/trading-v2` 下的用户全局副本。
+5. 如果项目本地 skill 文件缺失或不可读，明确说明并在执行任何 V2 交易流程前停止。
 
+当用户明确提到 `$trading-v3`、`trading-v3`、`V3.txt` 自由裁量交易，或要求按 V3 运行交易流程时：
+
+1. 先读取 `.cursor/skills/trading-v3/SKILL.md`。
+2. 把该文件视为项目本地 skill 正文并遵循其说明。
+3. 相对引用、脚本、资产和 agent 元数据都从 `.cursor/skills/trading-v3/` 解析。
+4. 不要依赖、创建或更新 `~/.codex/skills/trading-v3` 下的用户全局副本。
+5. 如果项目本地 skill 文件缺失或不可读，明确说明并在执行任何 V3 交易流程前停止。

@@ -31,16 +31,17 @@
 
 每一轮都必须按顺序完成这个状态机：
 
-1. 账户/订单/保护预检：`ccxt_get_config`、balance、positions、合约普通未成交委托、条件/保护单，以及理解当前敞口所需的近期成交。
-2. 持仓/订单/保护单对账：以 positions 和 balance positions 作为持仓事实来源；把条件/保护单按 symbol、positionSide、方向和数量匹配到已有持仓。无对应持仓的条件/保护单必须标记为孤立保护单，先取消或按 V2 风控处理；复核清零前只限制受影响的 symbol/side，或在影响总敞口时限制新增执行。
-3. 已有持仓动态管理：验证 SL/TP，按 `V2.txt` 处理必需退出/调整；当保护或敞口不清楚时，只限制受影响的 symbol/side，或在无法确认总仓位约束时暂停真实执行。
-4. 全市场覆盖：刷新配置好的合约市场池和当前 broad market payload。
-5. 截面选择：用当前轮数据重新计算 eligible pool、long Top 5、short Top 5、排除项和排序候选。
-6. CTA 决策：按 `V2.txt` 判断候选是否可交易；CTA 失败是不交易原因，不是跳过阶段。
-7. 风险仓位：计算每个候选的 size、leverage、margin impact、最大持仓约束、账户可用性、RR 和保护有效性。
-8. 执行和保护：只要当前持仓数低于 `V2.txt` 最大持仓上限，按排名顺序开符合 CTA 和仓位约束的新 symbol，直到达到上限或候选用完，然后提交或验证同步止损止盈。
-9. 动作后复核：重新读取账户、持仓、合约普通未成交委托和保护单。
-10. 最终总结：输出下方完整总结契约。
+1. 审计初始化：生成 `cycle_id`，通过 `audit-system` 写入 `cycle.started`；如果审计不可用，记录缺口并继续轮次。
+2. 账户/订单/保护预检：`ccxt_get_config`、balance、positions、合约普通未成交委托、条件/保护单，以及理解当前敞口所需的近期成交；每个 MCP 调用写 `mcp.call`。
+3. 持仓/订单/保护单对账：以 positions 和 balance positions 作为持仓事实来源；把条件/保护单按 symbol、positionSide、方向和数量匹配到已有持仓。无对应持仓的条件/保护单必须标记为孤立保护单，先取消或按 V2 风控处理；复核清零前只限制受影响的 symbol/side，或在影响总敞口时限制新增执行。
+4. 已有持仓动态管理：验证 SL/TP，按 `V2.txt` 处理必需退出/调整；当保护或敞口不清楚时，只限制受影响的 symbol/side，或在无法确认总仓位约束时暂停真实执行。
+5. 全市场覆盖：刷新配置好的合约市场池和当前 broad market payload，并写 `market.snapshot`。
+6. 截面选择：用当前轮数据重新计算 eligible pool、long Top 5、short Top 5、排除项和排序候选，并写 `candidate.ranked` / `candidate.filtered`。
+7. CTA 决策：按 `V2.txt` 判断候选是否可交易；CTA 失败是不交易原因，不是跳过阶段；每个候选写 `cta.decided`。
+8. 风险仓位：计算每个候选的 size、leverage、margin impact、最大持仓约束、账户可用性、RR 和保护有效性，并写 `risk.sized`。
+9. 执行和保护：只要当前持仓数低于 `V2.txt` 最大持仓上限，按排名顺序开符合 CTA 和仓位约束的新 symbol，直到达到上限或候选用完；提交前写 `execution.planned`，dry-run 写 `order.dry_run`，真实响应写 `order.submitted`。
+10. 动作后复核：重新读取账户、持仓、合约普通未成交委托和保护单，并写 `post.verify`。
+11. 最终总结：输出下方完整总结契约，并写 `summary.finalized`。
 
 如果某个阶段因数据或工具不可用而无法运行，继续到第 9 阶段并标记明确阻塞原因。不得在总结前静默停止。
 
@@ -92,6 +93,7 @@
 每一轮都必须以完整总结结束。不得因为不交易、阻塞、dry-run、部分数据或错误而省略。使用以下结构，并明确标记 unavailable 字段：
 
 - Cycle：timestamp、cadence、V2 source path/status、exchange、live/dry-run state。
+- Audit：cycle_id、audit data dir、audit write status、hash chain status、missing audit stages。
 - Data acquisition：account、positions、合约普通未成交委托、conditional/protection orders、market batch calls、使用的 incremental cursors、missing data 和 rate-limit/API issues。
 - Account and exposure：可用的 equity/balance 字段、当前持仓数、距离 V2 最大持仓上限的剩余名额、margin/leverage state，以及已有持仓管理动作。
 - Market scan：full-universe size、eligible count、exclusions、seed list size、long Top 5、short Top 5，以及排名是否从当前轮数据重新计算。
@@ -106,6 +108,7 @@
 状态请求只总结当前轮，不重述所有 V2 规则：
 
 - 账户预检结果。
+- 审计状态：cycle_id、审计落盘路径、hash chain 是否连续，以及缺失事件。
 - 已有持仓审查。
 - 候选级新开仓资格：哪些候选允许执行、哪些候选因 CTA/仓位/风险/保护/数据原因跳过，并给出明确原因。
 - 市场扫描状态和候选数量。

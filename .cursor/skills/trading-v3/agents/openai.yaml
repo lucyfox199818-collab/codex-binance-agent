@@ -1,0 +1,4 @@
+interface:
+  display_name: "交易 V3"
+  short_description: "按 V3 运行可脚本联网研究的自主合约交易流程"
+  default_prompt: "使用 $trading-v3 根据仓库根目录的 V3.txt 运行一轮可脚本、可联网研究的自主合约交易流程。"
