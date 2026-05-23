@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 市场数据：markets、ticker、tickers、order book、trades、OHLCV、交易所状态、交易所时间、币种、手续费。
+- 市场数据：markets、ticker、tickers、ticker summary、order book、trades、OHLCV、交易所状态、交易所时间、币种、手续费。
 - 账户信息：accounts、balance/free/used/total balance、positions、ledger、my trades、充值/提现记录、充值地址、杠杆档位。
 - 订单交易：普通下单/批量下单、查询订单、查询全部订单、编辑订单、撤单、批量撤单、全部撤单。
 - 条件单和衍生品交易：trigger、stop loss、take profit、stop order、stop limit、stop market、trailing、post-only、reduce-only、TP/SL 组合单。
@@ -75,7 +75,7 @@ Docker MCP stdio 配置示例：
 
 ## 工具列表
 
-当前显式注册 90 个 MCP tools；此外 `ccxt_call` 可以调用当前交易所实例上存在的任意 CCXT 方法。
+当前显式注册 94 个 MCP tools；此外 `ccxt_call` 可以调用当前交易所实例上存在的任意 CCXT 方法。
 
 基础和市场数据：
 
@@ -89,6 +89,7 @@ Docker MCP stdio 配置示例：
 - `ccxt_fetch_time`
 - `ccxt_fetch_ticker`
 - `ccxt_fetch_tickers`
+- `ccxt_fetch_ticker_summary`
 - `ccxt_fetch_order_book`
 - `ccxt_fetch_trades`
 - `ccxt_fetch_ohlcv`
@@ -131,6 +132,8 @@ Docker MCP stdio 配置示例：
 - `ccxt_fetch_orders`
 - `ccxt_fetch_open_orders`
 - `ccxt_fetch_open_algo_orders`
+- `ccxt_cancel_algo_order`
+- `ccxt_cancel_all_algo_orders`
 - `ccxt_fetch_closed_orders`
 - `ccxt_fetch_canceled_orders`
 - `ccxt_fetch_canceled_and_closed_orders`

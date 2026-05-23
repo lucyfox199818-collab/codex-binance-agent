@@ -24,9 +24,12 @@ const paramsSchema = z.record(z.string(), z.unknown()).optional();
 const symbolsSchema = z.array(z.string()).optional();
 const sinceSchema = z.number().int().nonnegative().optional();
 const limitSchema = z.number().int().positive().optional();
+const maxItemsSchema = z.number().int().positive().max(50).optional();
+const minQuoteVolumeSchema = z.number().nonnegative().optional();
 const codesSchema = z.array(z.string()).optional();
 const codeSchema = z.string().min(1);
 const idSchema = z.string().min(1);
+const algoIdSchema = z.string().min(1);
 const sideSchema = z.enum(["buy", "sell"]);
 const amountSchema = z.number().positive();
 const priceSchema = z.number().positive().optional();
@@ -114,6 +117,26 @@ export const toolDefinitions: CcxtToolDefinition[] = [
     }
   },
   {
+    name: "ccxt_fetch_ticker_summary",
+    title: "Fetch Ticker Summary",
+    description:
+      "Load markets and fetch tickers, then return compact long/short/liquidity rankings instead of the full ticker payload.",
+    inputSchema: {
+      symbols: symbolsSchema,
+      maxItems: maxItemsSchema,
+      minQuoteVolume: minQuoteVolumeSchema,
+      quote: z.string().min(1).optional(),
+      settle: z.string().min(1).optional(),
+      linear: z.boolean().optional(),
+      swap: z.boolean().optional(),
+      active: z.boolean().optional(),
+      excludeStableBases: z.boolean().optional(),
+      excludeNonCryptoBases: z.boolean().optional(),
+      reloadMarkets: z.boolean().optional(),
+      params: paramsSchema
+    }
+  },
+  {
     name: "ccxt_fetch_order_book",
     title: "Fetch Order Book",
     description: "Call exchange.fetchOrderBook(symbol, limit, params).",
@@ -171,6 +194,25 @@ export const toolDefinitions: CcxtToolDefinition[] = [
     description: "Call Binance Futures fapiPrivateGetOpenAlgoOrders(params) for conditional protection orders.",
     inputSchema: {
       symbol: z.string().min(1).optional(),
+      params: paramsSchema
+    }
+  },
+  {
+    name: "ccxt_cancel_algo_order",
+    title: "Cancel Algo Order",
+    description: "Call Binance Futures fapiPrivateDeleteAlgoOrder(params) for conditional protection orders.",
+    inputSchema: {
+      symbol: z.string().min(1),
+      algoId: algoIdSchema,
+      params: paramsSchema
+    }
+  },
+  {
+    name: "ccxt_cancel_all_algo_orders",
+    title: "Cancel All Algo Orders",
+    description: "Call Binance Futures fapiPrivateDeleteAlgoOpenOrders(params) for conditional protection orders.",
+    inputSchema: {
+      symbol: z.string().min(1),
       params: paramsSchema
     }
   },
@@ -929,6 +971,248 @@ function optionalBooleanLike(args: JsonRecord, key: string): boolean | undefined
   return undefined;
 }
 
+const stableBaseAssets = new Set([
+  "USDC",
+  "FDUSD",
+  "TUSD",
+  "DAI",
+  "BUSD",
+  "USDP",
+  "USDE",
+  "PYUSD",
+  "USD1",
+  "BFUSD",
+  "USDT"
+]);
+
+const nonCryptoBaseAssets = new Set([
+  "AAPL",
+  "AMZN",
+  "GOOGL",
+  "META",
+  "MSFT",
+  "NVDA",
+  "QCOM",
+  "TSLA",
+  "XAG",
+  "XAU",
+  "CL"
+]);
+
+interface TickerSummaryFilters {
+  quote: string;
+  settle: string;
+  linear: boolean;
+  swap: boolean;
+  active: boolean;
+  minQuoteVolume: number;
+  maxItems: number;
+  excludeStableBases: boolean;
+  excludeNonCryptoBases: boolean;
+}
+
+interface TickerSummaryRow {
+  symbol: string;
+  base: string;
+  last: number;
+  percentage: number;
+  quoteVolume: number;
+  timestamp?: number;
+  datetime?: string;
+  tags: string[];
+}
+
+function optionalBoolean(args: JsonRecord | undefined, key: string): boolean | undefined {
+  const value = args?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function tickerSummaryFilters(args: JsonRecord | undefined): TickerSummaryFilters {
+  return {
+    quote: optionalString(args, "quote") ?? "USDT",
+    settle: optionalString(args, "settle") ?? "USDT",
+    linear: optionalBoolean(args, "linear") ?? true,
+    swap: optionalBoolean(args, "swap") ?? true,
+    active: optionalBoolean(args, "active") ?? true,
+    minQuoteVolume: optionalNumber(args, "minQuoteVolume") ?? 0,
+    maxItems: optionalNumber(args, "maxItems") ?? 5,
+    excludeStableBases: optionalBoolean(args, "excludeStableBases") ?? true,
+    excludeNonCryptoBases: optionalBoolean(args, "excludeNonCryptoBases") ?? true
+  };
+}
+
+function numberFromRecord(record: JsonRecord | undefined, keys: string[]): number | undefined {
+  if (!record) {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function isTradingMarket(market: JsonRecord): boolean {
+  const info = recordOrUndefined(market.info);
+  const status = stringFromRecord(info ?? {}, ["contractStatus", "status"]);
+  return status === undefined || status === "TRADING";
+}
+
+function matchesTickerSummaryMarket(market: JsonRecord, filters: TickerSummaryFilters): boolean {
+  return (
+    market.quote === filters.quote &&
+    market.settle === filters.settle &&
+    market.linear === filters.linear &&
+    market.swap === filters.swap &&
+    market.contract === true &&
+    market.active === filters.active &&
+    isTradingMarket(market)
+  );
+}
+
+function tickerTags(percentage: number): string[] {
+  const tags: string[] = [];
+  if (percentage >= 30) {
+    tags.push("overheated>=30%");
+  }
+  if (percentage <= -20) {
+    tags.push("overcold<=-20%");
+  }
+  return tags;
+}
+
+function buildTickerSummaryRow(market: JsonRecord, ticker: JsonRecord): TickerSummaryRow | undefined {
+  const symbol = stringFromRecord(ticker, ["symbol"]) ?? stringFromRecord(market, ["symbol"]);
+  const base = stringFromRecord(market, ["base"]);
+  const last = numberFromRecord(ticker, ["last", "close"]);
+  const percentage = numberFromRecord(ticker, ["percentage"]);
+  const quoteVolume = numberFromRecord(ticker, ["quoteVolume"]);
+
+  if (!symbol || !base || last === undefined || percentage === undefined || quoteVolume === undefined) {
+    return undefined;
+  }
+
+  const row: TickerSummaryRow = {
+    symbol,
+    base,
+    last,
+    percentage,
+    quoteVolume,
+    tags: tickerTags(percentage)
+  };
+  const timestamp = numberFromRecord(ticker, ["timestamp"]);
+  const datetime = stringFromRecord(ticker, ["datetime"]);
+  if (timestamp !== undefined) {
+    row.timestamp = timestamp;
+  }
+  if (datetime !== undefined) {
+    row.datetime = datetime;
+  }
+  return row;
+}
+
+function uniqueSymbols(rows: TickerSummaryRow[]): string[] {
+  return [...new Set(rows.map((row) => row.symbol))];
+}
+
+async function buildTickerSummary(exchange: ExchangeLike, args: JsonRecord | undefined): Promise<JsonRecord> {
+  const filters = tickerSummaryFilters(args);
+  const requestedSymbols = Array.isArray(args?.symbols)
+    ? args.symbols.filter((symbol): symbol is string => typeof symbol === "string")
+    : undefined;
+  const requestedSymbolSet = requestedSymbols ? new Set(requestedSymbols) : undefined;
+  const markets = await invoke(exchange, "loadMarkets", [Boolean(args?.reloadMarkets)]);
+  const tickers = await invoke(exchange, "fetchTickers", [requestedSymbols, cleanParams(args?.params)]);
+  const marketRecords = Object.values(cleanParams(markets));
+  const tickerRecords = cleanParams(tickers);
+  const excluded = {
+    ineligibleMarket: 0,
+    stableBase: 0,
+    nonCryptoBase: 0,
+    belowMinQuoteVolume: 0,
+    missingTickerFields: 0
+  };
+
+  const eligibleMarkets = new Map<string, JsonRecord>();
+  for (const item of marketRecords) {
+    const market = recordOrUndefined(item);
+    const symbol = stringFromRecord(market ?? {}, ["symbol"]);
+    const base = stringFromRecord(market ?? {}, ["base"]);
+    if (!market || !symbol || (requestedSymbolSet && !requestedSymbolSet.has(symbol))) {
+      continue;
+    }
+    if (!matchesTickerSummaryMarket(market, filters)) {
+      excluded.ineligibleMarket += 1;
+      continue;
+    }
+    if (base && filters.excludeStableBases && stableBaseAssets.has(base)) {
+      excluded.stableBase += 1;
+      continue;
+    }
+    if (base && filters.excludeNonCryptoBases && nonCryptoBaseAssets.has(base)) {
+      excluded.nonCryptoBase += 1;
+      continue;
+    }
+    eligibleMarkets.set(symbol, market);
+  }
+
+  const rows: TickerSummaryRow[] = [];
+  for (const [symbol, market] of eligibleMarkets.entries()) {
+    const ticker = recordOrUndefined(tickerRecords[symbol]);
+    const row = buildTickerSummaryRow(market, ticker ?? {});
+    if (!row) {
+      excluded.missingTickerFields += 1;
+      continue;
+    }
+    if (row.quoteVolume < filters.minQuoteVolume) {
+      excluded.belowMinQuoteVolume += 1;
+      continue;
+    }
+    rows.push(row);
+  }
+
+  const longTop = [...rows]
+    .filter((row) => row.percentage > 0)
+    .sort((a, b) => b.percentage - a.percentage || b.quoteVolume - a.quoteVolume)
+    .slice(0, filters.maxItems);
+  const shortTop = [...rows]
+    .filter((row) => row.percentage < 0)
+    .sort((a, b) => a.percentage - b.percentage || b.quoteVolume - a.quoteVolume)
+    .slice(0, filters.maxItems);
+  const liquidityTop = [...rows]
+    .sort((a, b) => b.quoteVolume - a.quoteVolume)
+    .slice(0, filters.maxItems);
+  const milliseconds = methodIsCallable(exchange, "milliseconds")
+    ? await invoke(exchange, "milliseconds")
+    : Date.now();
+
+  return {
+    generatedAt: typeof milliseconds === "number" ? milliseconds : Date.now(),
+    filters,
+    universe: {
+      markets: marketRecords.length,
+      eligibleMarkets: eligibleMarkets.size,
+      tickers: Object.keys(tickerRecords).length,
+      summarizedTickers: rows.length,
+      excluded
+    },
+    longTop,
+    shortTop,
+    liquidityTop,
+    seedSymbols: uniqueSymbols([...longTop, ...shortTop, ...liquidityTop])
+  };
+}
+
 function normalizeBinanceFuturesSymbol(symbol: string | undefined): string | undefined {
   if (!symbol) {
     return undefined;
@@ -944,6 +1228,13 @@ function buildBinanceOpenAlgoOrdersParams(args: JsonRecord | undefined): JsonRec
   const symbol = normalizeBinanceFuturesSymbol(rawSymbol);
 
   return symbol ? { ...params, symbol } : params;
+}
+
+function buildBinanceCancelAlgoOrderParams(args: JsonRecord | undefined): JsonRecord {
+  const params = buildBinanceOpenAlgoOrdersParams(args);
+  const algoId = optionalString(args, "algoId") ?? (typeof params.algoId === "string" ? params.algoId : undefined);
+
+  return algoId ? { ...params, algoId } : params;
 }
 
 function buildBinanceFuturesAlgoOrder(
@@ -1204,6 +1495,9 @@ export function createToolHandlers(config: CcxtMcpConfig, exchangeProvider: Exch
         invoke(exchange, "fetchTickers", [args?.symbols, cleanParams(args?.params)])
       ),
 
+    ccxt_fetch_ticker_summary: async (args) =>
+      withExchange((exchange) => buildTickerSummary(exchange, args)),
+
     ccxt_fetch_order_book: async (args) =>
       withExchange((exchange) =>
         invoke(exchange, "fetchOrderBook", [
@@ -1251,6 +1545,24 @@ export function createToolHandlers(config: CcxtMcpConfig, exchangeProvider: Exch
       withExchange((exchange) =>
         invoke(exchange, "fapiPrivateGetOpenAlgoOrders", [buildBinanceOpenAlgoOrdersParams(args)])
       ),
+
+    ccxt_cancel_algo_order: async (args) => {
+      const params = buildBinanceCancelAlgoOrderParams(args);
+      if (!config.enableTrading || config.dryRun) {
+        return dryRunResult(config, "fapiPrivateDeleteAlgoOrder", params);
+      }
+
+      return await withExchange((exchange) => invoke(exchange, "fapiPrivateDeleteAlgoOrder", [params]));
+    },
+
+    ccxt_cancel_all_algo_orders: async (args) => {
+      const params = buildBinanceOpenAlgoOrdersParams(args);
+      if (!config.enableTrading || config.dryRun) {
+        return dryRunResult(config, "fapiPrivateDeleteAlgoOpenOrders", params);
+      }
+
+      return await withExchange((exchange) => invoke(exchange, "fapiPrivateDeleteAlgoOpenOrders", [params]));
+    },
 
     ccxt_fetch_closed_orders: async (args) =>
       withExchange((exchange) =>

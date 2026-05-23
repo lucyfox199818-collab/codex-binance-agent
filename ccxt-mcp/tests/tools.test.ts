@@ -17,12 +17,14 @@ function createFakeExchange() {
     id: "fake",
     has: {
       fetchTicker: true,
+      fetchTickers: true,
       createOrder: true
     },
     loadMarkets: vi.fn().mockResolvedValue({
       "BTC/USDT": { symbol: "BTC/USDT", active: true }
     }),
     fetchTicker: vi.fn().mockResolvedValue({ symbol: "BTC/USDT", last: 100 }),
+    fetchTickers: vi.fn().mockResolvedValue({}),
     fetchAccounts: vi.fn().mockResolvedValue([{ id: "account-1", type: "spot" }]),
     fetchPositions: vi.fn().mockResolvedValue([{ symbol: "BTC/USDT", contracts: 1 }]),
     fetchMyTrades: vi.fn().mockResolvedValue([{ id: "trade-1" }]),
@@ -31,6 +33,8 @@ function createFakeExchange() {
     createTakeProfitOrder: vi.fn().mockResolvedValue({ id: "take-profit-1" }),
     fapiPrivateGetOpenAlgoOrders: vi.fn().mockResolvedValue({ orders: [] }),
     fapiPrivatePostAlgoOrder: vi.fn().mockResolvedValue({ algoId: "algo-1", algoStatus: "NEW" }),
+    fapiPrivateDeleteAlgoOrder: vi.fn().mockResolvedValue({ algoId: "algo-1", algoStatus: "CANCELED" }),
+    fapiPrivateDeleteAlgoOpenOrders: vi.fn().mockResolvedValue({ code: "200", msg: "done" }),
     transfer: vi.fn().mockResolvedValue({ id: "transfer-1" }),
     createOrder: vi.fn().mockResolvedValue({ id: "order-1" }),
     fetch: vi.fn().mockResolvedValue({ ip: "203.0.113.1" }),
@@ -53,6 +57,9 @@ describe("createToolHandlers", () => {
       "ccxt_fetch_open_interest",
       "ccxt_fetch_orders",
       "ccxt_fetch_open_algo_orders",
+      "ccxt_cancel_algo_order",
+      "ccxt_cancel_all_algo_orders",
+      "ccxt_fetch_ticker_summary",
       "ccxt_create_trigger_order",
       "ccxt_create_stop_loss_order",
       "ccxt_create_take_profit_order",
@@ -158,6 +165,254 @@ describe("createToolHandlers", () => {
       symbol: "BANANAS31USDT",
       algoType: "CONDITIONAL"
     });
+  });
+
+  it("cancels a Binance futures algo order through the explicit algo API", async () => {
+    const exchange = { ...createFakeExchange(), id: "binance" };
+    const handlers = createToolHandlers(
+      { ...config, exchangeId: "binance", defaultType: "future", enableTrading: true, dryRun: false },
+      () => exchange
+    );
+
+    const result = await handlers.ccxt_cancel_algo_order({
+      symbol: "BANANAS31/USDT:USDT",
+      algoId: "3000001623568570",
+      params: { recvWindow: 5000 }
+    });
+
+    expect(result).toEqual({ algoId: "algo-1", algoStatus: "CANCELED" });
+    expect(exchange.fapiPrivateDeleteAlgoOrder).toHaveBeenCalledWith({
+      symbol: "BANANAS31USDT",
+      algoId: "3000001623568570",
+      recvWindow: 5000
+    });
+    expect(exchange.fapiPrivateDeleteAlgoOpenOrders).not.toHaveBeenCalled();
+  });
+
+  it("cancels all Binance futures open algo orders for a symbol", async () => {
+    const exchange = { ...createFakeExchange(), id: "binance" };
+    const handlers = createToolHandlers(
+      { ...config, exchangeId: "binance", defaultType: "future", enableTrading: true, dryRun: false },
+      () => exchange
+    );
+
+    const result = await handlers.ccxt_cancel_all_algo_orders({
+      symbol: "BANANAS31/USDT:USDT",
+      params: { recvWindow: 5000 }
+    });
+
+    expect(result).toEqual({ code: "200", msg: "done" });
+    expect(exchange.fapiPrivateDeleteAlgoOpenOrders).toHaveBeenCalledWith({
+      symbol: "BANANAS31USDT",
+      recvWindow: 5000
+    });
+    expect(exchange.fapiPrivateDeleteAlgoOrder).not.toHaveBeenCalled();
+  });
+
+  it("summarizes futures tickers without returning the full ticker payload", async () => {
+    const exchange = createFakeExchange();
+    exchange.loadMarkets.mockResolvedValue({
+      "BTC/USDT:USDT": {
+        symbol: "BTC/USDT:USDT",
+        base: "BTC",
+        quote: "USDT",
+        settle: "USDT",
+        active: true,
+        contract: true,
+        swap: true,
+        linear: true,
+        info: { contractStatus: "TRADING" }
+      },
+      "HOT/USDT:USDT": {
+        symbol: "HOT/USDT:USDT",
+        base: "HOT",
+        quote: "USDT",
+        settle: "USDT",
+        active: true,
+        contract: true,
+        swap: true,
+        linear: true,
+        info: { contractStatus: "TRADING" }
+      },
+      "COLD/USDT:USDT": {
+        symbol: "COLD/USDT:USDT",
+        base: "COLD",
+        quote: "USDT",
+        settle: "USDT",
+        active: true,
+        contract: true,
+        swap: true,
+        linear: true,
+        info: { contractStatus: "TRADING" }
+      },
+      "USDC/USDT:USDT": {
+        symbol: "USDC/USDT:USDT",
+        base: "USDC",
+        quote: "USDT",
+        settle: "USDT",
+        active: true,
+        contract: true,
+        swap: true,
+        linear: true,
+        info: { contractStatus: "TRADING" }
+      },
+      "AAPL/USDT:USDT": {
+        symbol: "AAPL/USDT:USDT",
+        base: "AAPL",
+        quote: "USDT",
+        settle: "USDT",
+        active: true,
+        contract: true,
+        swap: true,
+        linear: true,
+        info: { contractStatus: "TRADING" }
+      },
+      "ETH/USDC:USDC": {
+        symbol: "ETH/USDC:USDC",
+        base: "ETH",
+        quote: "USDC",
+        settle: "USDC",
+        active: true,
+        contract: true,
+        swap: true,
+        linear: true,
+        info: { contractStatus: "TRADING" }
+      }
+    });
+    exchange.fetchTickers.mockResolvedValue({
+      "BTC/USDT:USDT": {
+        symbol: "BTC/USDT:USDT",
+        last: 100,
+        percentage: 1.25,
+        quoteVolume: 1_500_000,
+        timestamp: 123
+      },
+      "HOT/USDT:USDT": {
+        symbol: "HOT/USDT:USDT",
+        last: 2,
+        percentage: 35,
+        quoteVolume: 2_500_000,
+        timestamp: 123
+      },
+      "COLD/USDT:USDT": {
+        symbol: "COLD/USDT:USDT",
+        last: 0.5,
+        percentage: -25,
+        quoteVolume: 3_500_000,
+        timestamp: 123
+      },
+      "USDC/USDT:USDT": {
+        symbol: "USDC/USDT:USDT",
+        last: 1,
+        percentage: 0.01,
+        quoteVolume: 10_000_000,
+        timestamp: 123
+      },
+      "AAPL/USDT:USDT": {
+        symbol: "AAPL/USDT:USDT",
+        last: 250,
+        percentage: 10,
+        quoteVolume: 9_000_000,
+        timestamp: 123
+      },
+      "ETH/USDC:USDC": {
+        symbol: "ETH/USDC:USDC",
+        last: 2000,
+        percentage: 5,
+        quoteVolume: 8_000_000,
+        timestamp: 123
+      }
+    });
+    const handlers = createToolHandlers(config, () => exchange);
+
+    const result = await handlers.ccxt_fetch_ticker_summary({
+      maxItems: 2,
+      minQuoteVolume: 1_000_000,
+      params: { type: "future" }
+    });
+
+    expect(result).toEqual({
+      generatedAt: 123456,
+      filters: {
+        quote: "USDT",
+        settle: "USDT",
+        linear: true,
+        swap: true,
+        active: true,
+        minQuoteVolume: 1_000_000,
+        maxItems: 2,
+        excludeStableBases: true,
+        excludeNonCryptoBases: true
+      },
+      universe: {
+        markets: 6,
+        eligibleMarkets: 3,
+        tickers: 6,
+        summarizedTickers: 3,
+        excluded: {
+          ineligibleMarket: 1,
+          stableBase: 1,
+          nonCryptoBase: 1,
+          belowMinQuoteVolume: 0,
+          missingTickerFields: 0
+        }
+      },
+      longTop: [
+        {
+          symbol: "HOT/USDT:USDT",
+          base: "HOT",
+          last: 2,
+          percentage: 35,
+          quoteVolume: 2_500_000,
+          timestamp: 123,
+          tags: ["overheated>=30%"]
+        },
+        {
+          symbol: "BTC/USDT:USDT",
+          base: "BTC",
+          last: 100,
+          percentage: 1.25,
+          quoteVolume: 1_500_000,
+          timestamp: 123,
+          tags: []
+        }
+      ],
+      shortTop: [
+        {
+          symbol: "COLD/USDT:USDT",
+          base: "COLD",
+          last: 0.5,
+          percentage: -25,
+          quoteVolume: 3_500_000,
+          timestamp: 123,
+          tags: ["overcold<=-20%"]
+        }
+      ],
+      liquidityTop: [
+        {
+          symbol: "COLD/USDT:USDT",
+          base: "COLD",
+          last: 0.5,
+          percentage: -25,
+          quoteVolume: 3_500_000,
+          timestamp: 123,
+          tags: ["overcold<=-20%"]
+        },
+        {
+          symbol: "HOT/USDT:USDT",
+          base: "HOT",
+          last: 2,
+          percentage: 35,
+          quoteVolume: 2_500_000,
+          timestamp: 123,
+          tags: ["overheated>=30%"]
+        }
+      ],
+      seedSymbols: ["HOT/USDT:USDT", "BTC/USDT:USDT", "COLD/USDT:USDT"]
+    });
+    expect(exchange.loadMarkets).toHaveBeenCalledWith(false);
+    expect(exchange.fetchTickers).toHaveBeenCalledWith(undefined, { type: "future" });
+    expect(exchange.createOrder).not.toHaveBeenCalled();
   });
 
   it("dry-runs conditional orders when trading is not enabled", async () => {

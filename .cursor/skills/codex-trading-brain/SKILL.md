@@ -1,81 +1,91 @@
 ---
 name: codex-trading-brain
-description: Use when the user explicitly asks Codex itself to start, stop, monitor, or operate the V2.txt crypto futures trading workflow through ccxt-mcp, including optional external crypto-data overlays. This skill must not duplicate V2 strategy rules.
+description: 当用户明确要求 Codex 本身通过 ccxt-mcp 启动、停止、监控或操作 V2.txt 加密货币合约交易流程时使用，包括可选外部加密数据覆盖；本 skill 不得重复 V2 策略规则。
 ---
 
-# Codex Trading Brain
+# Codex 交易大脑
 
-## Responsibility Boundary
+## 责任边界
 
-Treat `V2.txt` as the strategy, threshold, risk, and discretionary trading-decision source. This skill owns the operational wrapper: cycle state machine, MCP tool order, batch/incremental data discipline, execution verification, and final cycle summary scaffold.
+把 `V2.txt` 视为策略、阈值、风控和自主交易判断的来源。本 skill 只负责运行外壳：循环状态机、MCP 工具顺序、批量/增量取数纪律、执行后复核，以及最终每轮总结结构。
 
-If this skill and `V2.txt` conflict on strategy thresholds or risk limits, follow `V2.txt`. If they conflict on cycle mechanics, MCP acquisition discipline, or mandatory summary shape, follow this skill. If `V2.txt` is missing or unreadable, stop and do not trade.
+如果本 skill 与 `V2.txt` 在策略阈值或风控限制上冲突，按 `V2.txt` 执行。如果冲突点是循环机制、MCP 取数纪律或强制总结结构，按本 skill 执行。如果 `V2.txt` 缺失或不可读，停止交易。
 
-## Core Contract
+## 核心契约
 
-Act as the trading brain. Read `V2.txt`, call MCP tools for account and market data, reason through the current V2 rules, and call MCP tools for execution only when `V2.txt` allows it.
+作为交易大脑运行：读取 `V2.txt`，通过 MCP 工具读取账户和行情数据，根据当前 V2 规则推理，并且只在 `V2.txt` 允许时调用 MCP 执行工具。
 
-Each cycle MUST run every stage in this exact order. Do not skip a later stage; if an earlier stage is blocked, continue to the final summary with the blocker recorded.
+Codex 的推理角色不可委派。Codex 必须亲自根据当前 MCP 返回数据完成截面解释、CTA 确认、候选剔除、风险收益判断、仓位计算、交易/不交易决策和最终方案表述。不得把这些判断移交给后台 runner、本地脚本、cron 循环、生成式扫描器或 subagent。
 
-1. Re-read or confirm the current `V2.txt` rules.
-2. Discover/load `ccxt-mcp` tools if needed.
-3. Read account, positions, regular orders, and conditional/protection orders through `ccxt-mcp`.
-4. Manage existing positions first: verify protection, detect drift, and apply V2 exit/adjustment rules before considering new entries.
-5. Scan the configured CCXT futures market universe through `ccxt-mcp` using batch and incremental calls where possible.
-6. Perform cross-sectional coin selection from the current-cycle payloads.
-7. Apply CTA confirmation to decide whether each ranked candidate is tradable.
-8. Run risk controls and position sizing for each tradable candidate.
-9. If current open positions are below the max-position cap defined in `V2.txt`, open qualifying new symbols in rank order until V2 blocks entries, candidates run out, or the account reaches that cap. Do not open duplicate symbols.
-10. Submit entries and synchronized stop-loss/take-profit protection through `ccxt-mcp` only if every V2 gate passes and live trading is explicitly enabled.
-11. Re-read execution, position, ordinary-order, and TP/SL state.
-12. Emit the mandatory final cycle summary. This output is required for every cycle, including no-trade, blocked, dry-run, error, or timeout cycles.
-13. Wait for the configured interval and repeat with dynamic management of all existing positions.
+自动化只能适配传输、批量调用只读 MCP、重试同一个失败读取、以及把返回数据整理成便于 Codex 审阅的格式。如果自动化开始给候选排名、标记 `reviewRequired`、分配置信度、撰写 CTA 理由、决定 `no_trade`/`trade`、计算仓位或生成最终每轮决策，它就已经变成交易大脑，必须停止。
 
-## MCP Data Flow
+每一轮必须严格按以下顺序执行。不得跳过后续阶段；如果前置阶段被阻塞，也要继续输出最终总结并记录阻塞原因。
 
-Use MCP in this order:
+1. 重新读取或确认当前 `V2.txt` 规则。
+2. 如有需要，发现/加载 `ccxt-mcp` 工具。
+3. 通过 `ccxt-mcp` 读取账户、持仓、合约普通未成交委托、条件单和保护单。合约普通未成交委托指 `ccxt_fetch_open_orders` 返回的非条件、未成交合约订单；它不是现货订单，也不包含已成交后形成的持仓。
+4. 完成持仓/订单/保护单对账：持仓事实只能来自 `positions` 和 balance 中的 positions；条件单、algo 单、TP/SL 或 reduce-only 保护单不得反向证明持仓存在。若无对应持仓但存在条件/保护单，必须标记为孤立保护单，优先取消或按 V2 风控处理；复核清零前只限制受影响的 symbol/side，或在影响总敞口时限制新增执行。
+5. 先管理已有持仓：验证保护单、识别漂移，并在考虑新开仓前按 V2 规则处理退出或调整。
+6. 通过 `ccxt-mcp` 扫描配置好的 CCXT 合约市场池，优先使用批量和增量调用。
+7. 基于当前轮 MCP 数据完成截面选币。
+8. 对每个排序候选做 CTA 确认，判断是否可交易。
+9. 对每个可交易候选执行风控和仓位计算。
+10. 如果当前持仓数低于 `V2.txt` 定义的最大持仓上限，按排名顺序开符合 CTA、仓位、风险、成本、盘口和保护单硬约束的新币种，直到候选用完或账户达到持仓上限。不得开重复币种。
+11. 只有在候选通过 V2 的 CTA、仓位、风险、成本、盘口和保护单硬约束，且真实交易明确启用时，才通过 `ccxt-mcp` 提交入场和同步止损/止盈保护。
+12. 重新读取执行结果、持仓、合约普通未成交委托和 TP/SL 状态。
+13. 输出强制最终每轮总结。无论是不交易、阻塞、dry-run、错误还是超时轮次，都必须输出。
+14. 按配置间隔等待，并重复循环，同时动态管理所有已有持仓。
 
-1. `ccxt-mcp` account state: config, balances, positions, margin/leverage state, PnL fields returned by the exchange, regular open orders, closed/canceled orders, and conditional/protection orders where the exchange exposes them.
-2. `ccxt-mcp` market data: exchange markets, 24h tickers, best bid/ask or order book data, funding/mark data, open interest, and candles.
-3. Optional free external MCP overlays: public CoinGecko or other no-paid-plan sources when available and relevant.
-4. Codex reasoning: derive the exact filters, rankings, CTA confirmation, sizing, TP/SL, and strategy-specific report fields from `V2.txt`.
-5. `ccxt-mcp` execution: place, close, edit, cancel, or modify futures orders only when the V2 plan explicitly allows the action.
-6. `ccxt-mcp` account state again: verify post-action account, position, order, and protection state.
+## MCP 数据流
 
-For MCP capability names and first-wave scan structure, read `references/v2-operating-procedure.md`.
-For optional external data-source policy, including free-only rules and paid-source exclusions, read `references/mcp-data-policy.md`.
+按以下顺序使用 MCP：
 
-## Tool Discipline
+1. `ccxt-mcp` 账户状态：config、balance、positions、margin/leverage、交易所返回的 PnL 字段、合约普通未成交委托、已关闭/已取消订单，以及交易所暴露的条件/保护单。
+2. `ccxt-mcp` 行情数据：exchange markets、24h tickers、买一卖一或 order book、funding/mark、open interest 和 candles。
+3. 可选免费外部 MCP 覆盖：可用且相关时，可用 CoinGecko public 或其他无付费计划来源。
+4. Codex 推理：根据 `V2.txt` 推导具体过滤、排序、CTA 确认、仓位、TP/SL 和策略报告字段。
+5. `ccxt-mcp` 执行：只有 V2 方案明确允许时，才下单、平仓、改单、撤单或修改合约订单。
+6. 再次读取 `ccxt-mcp` 账户状态：复核动作后的账户、持仓、订单和保护状态。
 
-Market and account scans must use `ccxt-mcp` tools. Do not replace `ccxt-mcp` calls with ad hoc local shell, Python, REST, web-scraping, or file-generated scanner scripts.
+MCP 能力名称和第一波扫描结构见 `references/v2-operating-procedure.md`。
+可选外部数据源政策，包括免费优先和付费源排除规则，见 `references/mcp-data-policy.md`。
 
-Do not call web search, browser search, or generic web/news lookup tools during a V2 live decision cycle. Complete required `ccxt-mcp` account, order, protection, and market-data reads first. Optional external context may be queried only through already configured free MCP/data-provider tools and only after required `ccxt-mcp` data are complete enough for V2. If no configured free optional source is available, record `optionalDataMissing` or `freeOnlySkipped`; do not start or unblock a live cycle with generic Reuters, CoinDesk, BTC/ETH, Binance futures, volatility, or headline searches.
+## 工具纪律
 
-Temporary Node MCP clients are allowed only as stdio transport adapters to the real `ccxt-mcp` server when native MCP tools are not exposed in the current Codex session. They must launch `ccxt-mcp/dist/index.js` with an explicit absolute `cwd` pointing at the `ccxt-mcp` package directory, call `listTools` before data collection, and continue only if the expected `ccxt_` read tools are present. Never set the MCP server cwd from `process.cwd()` for live-cycle data reads. The wrapper must not import `ccxt`, use `fetch`/REST, scrape web pages, or compute market data from files; it may only call MCP tools and process their returned payloads. Keep a `readOnlyToolAllowlist` and abort before any mutating tool such as `ccxt_create_*`, `ccxt_cancel_*`, `ccxt_edit_*`, `ccxt_set_*`, `ccxt_add_margin`, `ccxt_reduce_margin`, `ccxt_transfer`, or `ccxt_withdraw`. `ccxt_call` may be used only for explicitly reviewed read-only exchange GET methods, and each allowed method name must be listed before the cycle starts.
+行情和账户扫描必须使用 `ccxt-mcp` 工具。不得用临时本地 shell、Python、REST、网页抓取或文件生成扫描脚本替代 `ccxt-mcp` 调用。
 
-If a required `ccxt-mcp` market-data, account, or execution capability is unavailable, report the missing capability and return a no-trade/status result. Do not silently fall back to a homemade scanner.
+V2 实盘决策轮次中，不得调用 web search、browser search 或通用网页/新闻检索工具。必须先完成必需的 `ccxt-mcp` 账户、订单、保护和行情读取。可选外部背景只能在必需 `ccxt-mcp` 数据足够完成 V2 判断后，通过已经配置好的免费 MCP/数据提供工具查询。如果没有配置好的免费可选源，记录 `optionalDataMissing` 或 `freeOnlySkipped`；不得用通用 Reuters、CoinDesk、BTC/ETH、Binance futures、波动率或新闻搜索来启动或解锁实盘轮次。
 
-Before any live execution, call `ccxt_get_config` and verify the configured exchange, account credentials, proxy presence when required, and trading gate state. If `CCXT_ENABLE_TRADING` is not true or `CCXT_DRY_RUN` is true, treat execution tools as simulation-only and report the dry-run result instead of claiming a live order was placed.
+只有在当前 Codex 会话没有暴露原生 MCP 工具时，才允许临时 Node MCP client 作为真实 `ccxt-mcp` server 的 stdio 传输适配器。它必须用显式绝对 `cwd` 启动 `ccxt-mcp/dist/index.js`，`cwd` 指向 `ccxt-mcp` 包目录；数据采集前必须调用 `listTools`，并且只有预期的 `ccxt_` 只读工具存在时才继续。不得从 `process.cwd()` 推导 MCP server cwd。wrapper 不得 import `ccxt`、使用 `fetch`/REST、抓网页，或从文件计算行情；它只能调用 MCP 工具并整理返回 payload。必须维护 `readOnlyToolAllowlist`，并在任何 mutating 工具前中止，例如 `ccxt_create_*`、`ccxt_cancel_*`、`ccxt_edit_*`、`ccxt_set_*`、`ccxt_add_margin`、`ccxt_reduce_margin`、`ccxt_transfer` 或 `ccxt_withdraw`。`ccxt_call` 只能用于明确审阅过的只读 exchange GET 方法，并且每个允许的方法名必须在轮次开始前列出。
 
-Every cycle must recompute the eligible pool, long Top 5, short Top 5, and candidate list from the current cycle's MCP payloads. Previous-cycle Top 5 may be used only as a comparison after recomputation, never as an input or cache for the current ranking.
+不得为实盘轮次创建持久自主 runner。临时适配器必须由当前 Codex 回合掌控，不得包含策略逻辑，并且必须把每个排名、CTA、风险、执行和总结决策交回 Codex。它不得 sleep-loop 到未来轮次、维护策略状态、追加最终轮次总结，或在候选需要自由裁量审阅后继续运行。
 
-Use incremental data retrieval after the first baseline: keep per-symbol timestamps/cursors for candles, orders, trades, and account events when the tool supports `since` or `limit`. Full-market coverage is still required, but do it with batch calls and cached static metadata instead of re-downloading full historical data each round.
+如果越过上述边界，立即停止进程，移除或禁用 runner，审计日志中是否存在 mutating 调用和缺失的 Codex 决策，记录纠正措施，然后只在 Codex 控制的轮次中恢复。
 
-Prefer high-density MCP calls over scattered calls: use all-symbol or multi-symbol tools such as `ccxt_fetch_tickers`, `ccxt_fetch_funding_rates`, `ccxt_fetch_mark_prices`, `ccxt_fetch_open_interests`, `ccxt_fetch_positions`, and order/account batch endpoints when available. Only fan out per symbol after the cross-sectional seed list is narrowed.
+如果缺少必需的 `ccxt-mcp` 行情、账户或执行能力，报告缺失能力并返回阻塞/状态结果。不得静默退回自制扫描器。
 
-Local shell commands are allowed only for repo/config inspection, not live market discovery. If a local Python command is unavoidable for repo inspection, use `python3`; do not assume a `python` alias exists.
+任何真实执行前，调用 `ccxt_get_config` 并确认交易所、账户凭据、需要时的代理存在性，以及交易开关状态。如果 `CCXT_ENABLE_TRADING` 不是 true，或 `CCXT_DRY_RUN` 是 true，把执行工具视为模拟，报告 dry-run 结果，不得声称已经真实下单。
 
-## Continuous Operation
+每一轮都必须从当前 MCP payload 重新计算合格池、long Top 5、short Top 5 和候选列表。上一轮 Top 5 只能在重新计算后作为对比，绝不能作为当前排名的输入或缓存。
 
-Default cadence is one decision cycle every 60 seconds unless the user gives another interval. Continue in the active Codex CLI/session until the user stops it, a newer instruction changes the objective, MCP tools become unavailable, or V2 risk/account state requires stopping.
+第一轮基线后使用增量取数：当工具支持 `since` 或 `limit` 时，为 candles、orders、trades 和 account events 保留按 symbol 的 timestamp/cursor。全市场覆盖仍然必须完成，但要用批量调用和缓存静态 metadata，避免每轮重新下载完整历史数据。
 
-Do not stop merely because a cycle has no trade. `No trade` is a normal V2 decision.
+优先使用高密度 MCP 调用，而不是零散调用：可用时使用全 symbol 或多 symbol 工具，例如 `ccxt_fetch_tickers`、`ccxt_fetch_funding_rates`、`ccxt_fetch_mark_prices`、`ccxt_fetch_open_interests`、`ccxt_fetch_positions` 和订单/账户批量端点。只有截面 seed list 缩窄后，才按 symbol 扇出读取。
 
-## Hard Boundaries
+本地 shell 命令只允许用于 repo/config 检查，不能用于实盘行情发现。如果 repo 检查不可避免地需要本地 Python 命令，使用 `python3`；不要假设存在 `python` alias。
 
-- Do not use remembered thresholds when `V2.txt` is available.
-- Do not invent market data if an MCP capability is missing.
-- Do not silently place orders; produce the V2 trade plan first.
-- Do not place orders without stop loss and take profit if V2 requires them.
-- Do not continue new entries when account, order, position, or protection state is unclear.
-- Do not omit the final cycle summary. A partial cycle still requires a complete summary with missing fields marked as unavailable and the reason.
+## 连续运行
+
+默认节奏是每 60 秒一个决策轮次，除非用户给出其他间隔。在当前 Codex CLI/session 中持续运行，直到用户停止、新指令改变目标、MCP 工具不可用，或 V2 风控/账户状态要求停止。
+
+不要因为某一轮没有交易就停止。`No trade` 是正常的 V2 决策。
+
+## 硬边界
+
+- `V2.txt` 可用时，不得使用记忆中的阈值。
+- MCP 能力缺失时，不得编造行情数据。
+- 不得静默下单；必须先输出 V2 交易计划。
+- 如果 V2 要求止损止盈，不得在没有止损止盈的情况下下单。
+- 当账户、订单、持仓或保护状态不清楚时，不得声称已满足仓位约束，也不得提交真实执行。
+- 不得把条件单、algo 单、TP/SL 或 reduce-only 保护单当作持仓存在的证据；没有对应持仓的保护单是孤立保护单，必须清理或报告阻塞并复核。
+- 不得省略最终每轮总结。即使是部分轮次，也必须输出完整总结，并把缺失字段标记为 unavailable 且说明原因。

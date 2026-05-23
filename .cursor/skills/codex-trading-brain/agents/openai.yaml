@@ -1,4 +1,4 @@
 interface:
-  display_name: "Codex Trading Brain"
-  short_description: "Operate V2 trading through ccxt-mcp"
-  default_prompt: "Use $codex-trading-brain to operate the V2.txt trading brain through ccxt-mcp. Do not use web search or browser/news lookup during V2 live cycles; use only ccxt-mcp plus configured free optional MCP overlays."
+  display_name: "Codex 交易大脑"
+  short_description: "通过 ccxt-mcp 运行 V2 合约交易"
+  default_prompt: "使用 $codex-trading-brain 通过 ccxt-mcp 运行 V2.txt 交易大脑；V2 实盘轮次中不要使用 web search 或浏览器/新闻检索，只使用 ccxt-mcp 和已配置的免费可选 MCP 覆盖。"
