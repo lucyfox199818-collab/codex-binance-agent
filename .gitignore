@@ -18,6 +18,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Runtime audit data
+state/audit/
+
 # OS and editor state
 .DS_Store
 Thumbs.db
