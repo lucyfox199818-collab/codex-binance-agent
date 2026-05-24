@@ -106,10 +106,13 @@ function renderCycleList(): string {
 }
 
 function renderReport(report: CycleReport): string {
+  const v3Report = isV3Report(report);
   return `
-    <div class="grid">
+    <div class="report-stack">
+      ${v3Report ? renderV3Overview(report) : ""}
+      <div class="grid">
       <section class="panel">
-        <h2>链路时间线 <span class="badge ${report.verification.ok ? "ok" : "warn"}">${report.verification.ok ? "hash ok" : "hash broken"}</span></h2>
+        <h2>链路时间线 <span class="badge ${report.verification.ok ? "ok" : "warn"}">${report.verification.ok ? "审计通过" : "审计异常"}</span></h2>
         <div class="timeline">${report.events.map(renderEventButton).join("")}</div>
       </section>
       <section class="panel">
@@ -137,12 +140,12 @@ function renderReport(report: CycleReport): string {
         ${renderEventTable(report.actionEvents)}
       </section>
       <section class="panel">
-        <h2>候选与 CTA</h2>
+        <h2>筛选与触发</h2>
         ${renderEventTable(report.candidates)}
       </section>
       <section class="panel">
         <h2>执行与复核</h2>
-        ${renderEventTable([...report.executionEvents, ...report.verificationEvents])}
+        ${renderEventTable(uniqueEvents([...report.executionEvents, ...report.verificationEvents]))}
       </section>
       <section class="panel">
         <h2>Payload Diff</h2>
@@ -160,6 +163,131 @@ function renderReport(report: CycleReport): string {
         <h2>复盘报告</h2>
         <pre>${escapeHtml(JSON.stringify(report, null, 2))}</pre>
       </section>
+      </div>
+    </div>
+  `;
+}
+
+function renderV3Overview(report: CycleReport): string {
+  const finalSummary = report.summaryEvents.find((event) => event.type === "summary.finalized");
+  const actionBasis = uniqueEvents([
+    ...report.riskEvents,
+    ...report.actionEvents,
+    ...report.executionEvents.filter((event) => event.phase !== "verification")
+  ]);
+  const reviewEvents = uniqueEvents([...report.verificationEvents, ...report.summaryEvents]);
+  const lastEvent = report.events.at(-1);
+  return `
+    <section class="overview-band">
+      <div class="overview-head">
+        <div>
+          <h2>V3 主脑概览</h2>
+          <p>${escapeHtml(report.cycle.summary ?? lastEvent?.summary ?? "当前轮次尚未写入最终总结")}</p>
+        </div>
+        <span class="badge ${report.verification.ok ? "ok" : "warn"}">${report.verification.ok ? "可复盘" : "需补齐"}</span>
+      </div>
+      <div class="kpi-grid">
+        ${renderMetric("状态", report.cycle.status)}
+        ${renderMetric("事件数", report.cycle.eventCount)}
+        ${renderMetric("执行链路", report.cycle.hasExecution ? "有" : "无")}
+        ${renderMetric("交易标的", report.cycle.symbols.join(", ") || "无")}
+        ${renderMetric("最终总结", finalSummary ? `#${finalSummary.sequence}` : "缺失")}
+        ${renderMetric("审计结果", report.verification.ok ? "通过" : report.verification.reason ?? "异常")}
+      </div>
+      ${renderVerificationNotice(report)}
+      ${renderV3Gaps(report)}
+    </section>
+    <div class="v3-board">
+      ${renderV3Section("账户与市场事实", report.dataEvents, "还没有账户、持仓、市场或预检数据事件")}
+      ${renderV3Section("筛选路径", report.screeningEvents, "还没有记录筛选、扫描或自由分析依据")}
+      ${renderV3Section("组合判断", report.portfolioEvents, "还没有记录组合层面的判断或意图")}
+      ${renderV3Section("下单与调仓依据", actionBasis, "还没有风险、动作或执行依据")}
+      ${renderV3Section("复核与最终总结", reviewEvents, "还没有复核事件或最终总结")}
+    </div>
+  `;
+}
+
+function renderMetric(label: string, value: string | number): string {
+  return `
+    <div class="metric">
+      <div class="metric-label">${escapeHtml(label)}</div>
+      <div class="metric-value">${escapeHtml(String(value))}</div>
+    </div>
+  `;
+}
+
+function renderVerificationNotice(report: CycleReport): string {
+  if (report.verification.ok) {
+    return `<div class="notice ok-bg">hash 链、payload 和最终总结校验通过，共检查 ${report.verification.checkedEvents} 个事件。</div>`;
+  }
+  return `
+    <div class="notice warn-bg">
+      审计未通过：${escapeHtml(report.verification.reason ?? "unknown")}
+      ${report.verification.brokenAtEventId ? `，定位事件 ${escapeHtml(report.verification.brokenAtEventId)}` : ""}
+    </div>
+  `;
+}
+
+function renderV3Gaps(report: CycleReport): string {
+  const gaps: string[] = [];
+  if (!report.summaryEvents.some((event) => event.type === "summary.finalized")) {
+    gaps.push("缺少每轮结束必须写入的 summary.finalized");
+  }
+  if (!report.dataEvents.length) {
+    gaps.push("缺少账户、仓位、订单或市场数据记录");
+  }
+  if (!report.screeningEvents.length) {
+    gaps.push("缺少筛选路径或自由分析记录");
+  }
+  if (!report.portfolioEvents.length) {
+    gaps.push("缺少组合层面的决策记录");
+  }
+  if (!report.actionEvents.length && !report.executionEvents.length) {
+    gaps.push("缺少动作、执行或明确放弃动作的记录");
+  }
+  if (!report.verificationEvents.length && report.cycle.hasExecution) {
+    gaps.push("已有执行链路但缺少执行后复核记录");
+  }
+  if (!gaps.length) {
+    return `<div class="notice ok-bg">主脑链路记录完整，可以按分区复盘。</div>`;
+  }
+  return `
+    <div class="gap-list">
+      <strong>当前缺口</strong>
+      <ul>${gaps.map((gap) => `<li>${escapeHtml(gap)}</li>`).join("")}</ul>
+    </div>
+  `;
+}
+
+function renderV3Section(title: string, events: AuditEventRecord[], emptyText: string): string {
+  return `
+    <section class="panel">
+      <h2>${escapeHtml(title)}</h2>
+      ${renderEventCards(events, emptyText)}
+    </section>
+  `;
+}
+
+function renderEventCards(events: AuditEventRecord[], emptyText: string): string {
+  if (!events.length) {
+    return `<p class="muted">${escapeHtml(emptyText)}</p>`;
+  }
+  return `
+    <div class="event-card-list">
+      ${events
+        .map(
+          (event) => `
+            <button class="event-card ${event.eventId === state.selectedEventId ? "active" : ""}" data-event-id="${escapeAttr(event.eventId)}">
+              <span class="event-card-top">
+                <strong>#${event.sequence} ${escapeHtml(event.type)}</strong>
+                <span>${escapeHtml(event.phase)}</span>
+              </span>
+              <span>${escapeHtml(event.summary)}</span>
+              <span class="cycle-meta">${escapeHtml(event.symbol ?? "all")} · payload ${escapeHtml(event.payloadHash.slice(0, 12))}</span>
+            </button>
+          `
+        )
+        .join("")}
     </div>
   `;
 }
@@ -212,7 +340,7 @@ function renderEventTable(events: AuditEventRecord[]): string {
                   <td>${escapeHtml(event.type)}</td>
                   <td>${escapeHtml(event.symbol ?? "all")}</td>
                   <td>${escapeHtml(event.summary)}</td>
-                  <td>${escapeHtml(event.payloadHash.slice(0, 12))}</td>
+                  <td><button class="link-button" data-event-id="${escapeAttr(event.eventId)}">${escapeHtml(event.payloadHash.slice(0, 12))}</button></td>
                 </tr>
               `
             )
@@ -340,6 +468,28 @@ function escapeHtml(value: string): string {
 
 function escapeAttr(value: string): string {
   return escapeHtml(value).replace(/'/g, "&#39;");
+}
+
+function isV3Report(report: CycleReport): boolean {
+  const haystack = [
+    report.cycle.cycleId,
+    report.cycle.summary ?? "",
+    ...report.events.flatMap((event) => [event.type, event.phase, event.summary, ...event.tags])
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes("v3");
+}
+
+function uniqueEvents(events: AuditEventRecord[]): AuditEventRecord[] {
+  const seen = new Set<string>();
+  return events.filter((event) => {
+    if (seen.has(event.eventId)) {
+      return false;
+    }
+    seen.add(event.eventId);
+    return true;
+  });
 }
 
 loadCycles().catch((error: unknown) => {

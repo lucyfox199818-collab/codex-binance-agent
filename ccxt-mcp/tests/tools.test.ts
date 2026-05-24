@@ -552,6 +552,69 @@ describe("createToolHandlers", () => {
     expect(exchange.createStopLossOrder).not.toHaveBeenCalled();
   });
 
+  it("replaces duplicate Binance futures close-position stop-loss algo orders when explicitly requested", async () => {
+    const existingOrder = {
+      algoId: "existing-sl",
+      symbol: "BANANAS31USDT",
+      side: "BUY",
+      positionSide: "SHORT",
+      orderType: "STOP_MARKET",
+      triggerPrice: "0.010500",
+      closePosition: true,
+      algoStatus: "NEW"
+    };
+    const exchange = { ...createFakeExchange(), id: "binance" };
+    exchange.fapiPrivateGetOpenAlgoOrders.mockResolvedValue({ orders: [existingOrder] });
+    exchange.fapiPrivateDeleteAlgoOrder.mockResolvedValue({ algoId: "existing-sl", algoStatus: "CANCELED" });
+    exchange.fapiPrivatePostAlgoOrder.mockResolvedValue({ algoId: "new-sl", algoStatus: "NEW" });
+    const handlers = createToolHandlers(
+      { ...config, exchangeId: "binance", defaultType: "future", enableTrading: true, dryRun: false },
+      () => exchange
+    );
+
+    const result = await handlers.ccxt_create_stop_loss_order({
+      symbol: "BANANAS31/USDT:USDT",
+      type: "market",
+      side: "buy",
+      amount: 5632,
+      stopLossPrice: 0.010619,
+      params: {
+        positionSide: "SHORT",
+        closePosition: true,
+        replaceExistingClosePosition: true,
+        workingType: "MARK_PRICE",
+        recvWindow: 5000
+      }
+    });
+
+    const expectedNewOrderPayload = {
+      algoType: "CONDITIONAL",
+      symbol: "BANANAS31USDT",
+      side: "BUY",
+      type: "STOP_MARKET",
+      triggerPrice: "0.010619",
+      positionSide: "SHORT",
+      workingType: "MARK_PRICE",
+      recvWindow: 5000,
+      closePosition: "true"
+    };
+    expect(result).toEqual({
+      replaced: true,
+      exchange: "binance",
+      canceledOrder: { algoId: "existing-sl", algoStatus: "CANCELED" },
+      newOrder: { algoId: "new-sl", algoStatus: "NEW" },
+      replacedExistingOrder: existingOrder,
+      params: expectedNewOrderPayload
+    });
+    expect(exchange.fapiPrivateDeleteAlgoOrder).toHaveBeenCalledWith({
+      symbol: "BANANAS31USDT",
+      algoId: "existing-sl",
+      recvWindow: 5000
+    });
+    expect(exchange.fapiPrivatePostAlgoOrder).toHaveBeenCalledWith(expectedNewOrderPayload);
+    expect(exchange.createStopLossOrder).not.toHaveBeenCalled();
+  });
+
   it("routes Binance futures take-profit close-position orders through the Algo Order API", async () => {
     const exchange = { ...createFakeExchange(), id: "binance" };
     const handlers = createToolHandlers(

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "Local audit recorder and UI for V2 trading cycles.",
+  "description": "Local audit recorder and UI for trading cycles.",
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",

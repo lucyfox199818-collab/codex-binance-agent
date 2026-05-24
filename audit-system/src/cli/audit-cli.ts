@@ -24,7 +24,11 @@ async function main(): Promise<void> {
       if (!cycleId) {
         throw new Error("Usage: audit verify <cycle_id>");
       }
-      console.log(JSON.stringify(store.verifyCycle(cycleId)));
+      const verification = store.verifyCycle(cycleId);
+      console.log(JSON.stringify(verification));
+      if (!verification.ok) {
+        process.exitCode = 1;
+      }
       return;
     }
 

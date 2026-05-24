@@ -126,4 +126,23 @@ describe("audit core", () => {
     });
     reopened.close();
   });
+
+  it("requires every cycle to end with a finalized summary", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+    store.appendEvent({
+      cycleId: "cycle-missing-summary",
+      type: "cycle.started",
+      phase: "cycle",
+      summary: "cycle started",
+      payload: { ok: true }
+    });
+
+    expect(store.verifyCycle("cycle-missing-summary")).toMatchObject({
+      ok: false,
+      checkedEvents: 1,
+      reason: "missing summary.finalized"
+    });
+    store.close();
+  });
 });

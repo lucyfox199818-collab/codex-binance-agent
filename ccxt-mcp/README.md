@@ -160,6 +160,11 @@ Docker MCP stdio 配置示例：
 - `ccxt_create_post_only_order`
 - `ccxt_create_reduce_only_order`
 
+Binance USDT-M close-position 保护单默认会跳过同合约、同方向、同仓位方向的重复
+`STOP_MARKET` / `TAKE_PROFIT_MARKET` algo 单。需要替换已有保护单时，在创建请求的
+`params` 里显式传 `replaceExistingClosePosition: true`；工具会先取消匹配的旧 algo 单，
+再提交新的 close-position 保护单，并返回撤单和新单结果。
+
 合约和账户变更：
 
 - `ccxt_fetch_funding_rate`

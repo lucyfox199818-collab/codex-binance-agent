@@ -116,8 +116,33 @@ recorder.record({
 
 recorder.finalize("V3 sample cycle finalized", {
   strategyFile: "V3.txt",
-  audit: "hash chain complete",
-  next: "review SOL protection and BTC wait condition"
+  config: {
+    exchange: "binance",
+    enableTrading: false,
+    dryRun: true
+  },
+  auditStatus: "hash chain complete",
+  accountSummary: {
+    accountReady: true,
+    positions: 0,
+    openOrders: 0,
+    protectionState: "planned"
+  },
+  portfolioDecision: "Wait on BTC and prepare a protected SOL dry-run long after free-form review",
+  actions: [
+    {
+      symbol: "BTC/USDT:USDT",
+      action: "wait",
+      reason: "entry not better than waiting"
+    },
+    {
+      symbol: "SOL/USDT:USDT",
+      action: "open_long",
+      mode: "dry_run",
+      protection: "planned stop loss"
+    }
+  ],
+  nextRoundFocus: ["review SOL protection", "re-check BTC wait condition"]
 });
 
 console.log(JSON.stringify({ cycleId, dataDir: auditDataDir() }));

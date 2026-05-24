@@ -12,7 +12,7 @@ async function tempAuditDir(): Promise<string> {
 }
 
 describe("V3 strategy audit compatibility", () => {
-  it("stores free-form analysis, intent and action events without requiring V2 candidate or CTA stages", async () => {
+  it("stores free-form analysis, intent and action events without requiring fixed candidate or trigger stages", async () => {
     const dataDir = await tempAuditDir();
     const store = new AuditStore({ dataDir });
     const recorder = new AuditRecorder(store, "v3-cycle");
@@ -71,7 +71,14 @@ describe("V3 strategy audit compatibility", () => {
       symbol: "SOL/USDT:USDT",
       payload: { dryRun: true, orderId: "v3-dry-run-sol" }
     });
-    recorder.finalize("V3 cycle finalized", { strategyFile: "V3.txt" });
+    recorder.finalize("V3 cycle finalized", {
+      strategyFile: "V3.txt",
+      config: { exchange: "binance", enableTrading: true, dryRun: true },
+      accountSummary: { equity: 100, available: 90, positions: 0, openOrders: 0, protections: 0 },
+      portfolioDecision: "Wait on BTC and dry-run protected SOL long after free-form review",
+      actions: [{ symbol: "SOL/USDT:USDT", action: "open_long", mode: "dry_run" }],
+      nextRoundFocus: ["verify protection state", "review BTC wait condition"]
+    });
 
     const report = store.getCycleReport("v3-cycle");
     expect(report.cycle.symbols).toEqual(["SOL/USDT:USDT"]);
@@ -83,6 +90,33 @@ describe("V3 strategy audit compatibility", () => {
     expect(report.actionEvents.map((event) => event.type)).toEqual(["action.planned", "action.executed"]);
     expect(report.candidates).toEqual([]);
     expect(store.verifyCycle("v3-cycle").ok).toBe(true);
+    store.close();
+  });
+
+  it("rejects a V3 finalized summary that omits required review fields", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+    store.appendEvent({
+      cycleId: "v3-incomplete-summary",
+      type: "cycle.started",
+      phase: "cycle",
+      summary: "Started V3 audit cycle",
+      payload: { strategyFile: "V3.txt" },
+      tags: ["v3"]
+    });
+    store.appendEvent({
+      cycleId: "v3-incomplete-summary",
+      type: "summary.finalized",
+      phase: "summary",
+      summary: "V3 summary finalized without enough detail",
+      payload: { strategyFile: "V3.txt" },
+      tags: ["v3"]
+    });
+
+    const verification = store.verifyCycle("v3-incomplete-summary");
+    expect(verification.ok).toBe(false);
+    expect(verification.reason).toContain("incomplete V3 final summary");
+    expect(verification.reason).toContain("accountSummary");
     store.close();
   });
 });

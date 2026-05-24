@@ -231,10 +231,13 @@ export class AuditStore {
       strategyEvents: events.filter((event) => phaseMatches(event.phase, ["strategy"])),
       dataEvents: events.filter((event) => phaseMatches(event.phase, ["preflight", "data", "market"])),
       analysisEvents: events.filter((event) => phaseMatches(event.phase, ["analysis"])),
+      screeningEvents: events.filter((event) => isScreeningEvent(event)),
       decisionEvents: events.filter((event) => phaseMatches(event.phase, ["decision", "intent", "cta"])),
+      portfolioEvents: events.filter((event) => isPortfolioEvent(event)),
       riskEvents: events.filter((event) => phaseMatches(event.phase, ["risk"])),
       actionEvents: events.filter((event) => phaseMatches(event.phase, ["action"])),
       verificationEvents: events.filter((event) => phaseMatches(event.phase, ["verification"])),
+      summaryEvents: events.filter((event) => phaseMatches(event.phase, ["summary"]) || event.type === "summary.finalized"),
       candidates: events.filter((event) => event.phase === "candidate" || event.phase === "cta"),
       executionEvents: events.filter(
         (event) => event.phase === "action" || event.phase === "execution" || event.phase === "verification"
@@ -256,6 +259,9 @@ export class AuditStore {
 
   verifyCycle(cycleId: string): ChainVerification {
     const events = this.listEvents(cycleId);
+    if (!events.length) {
+      return { cycleId, ok: false, checkedEvents: 0, reason: "no audit events" };
+    }
     let previousHash: string | undefined;
     let checkedEvents = 0;
     for (const event of events) {
@@ -291,6 +297,22 @@ export class AuditStore {
         };
       }
       previousHash = eventHash;
+    }
+    const finalEvent = [...events].reverse().find((event) => event.type === "summary.finalized");
+    if (!finalEvent) {
+      return { cycleId, ok: false, checkedEvents, reason: "missing summary.finalized" };
+    }
+    if (isV3AuditCycle(cycleId, events)) {
+      const missingFields = missingV3FinalSummaryFields(this.getPayload(finalEvent.eventId));
+      if (missingFields.length) {
+        return {
+          cycleId,
+          ok: false,
+          checkedEvents,
+          brokenAtEventId: finalEvent.eventId,
+          reason: `incomplete V3 final summary: missing ${missingFields.join(", ")}`
+        };
+      }
     }
     return { cycleId, ok: true, checkedEvents };
   }
@@ -509,4 +531,94 @@ function objectRecord(value: unknown): Record<string, unknown> {
 
 function phaseMatches(phase: string, candidates: string[]): boolean {
   return candidates.includes(phase);
+}
+
+function isScreeningEvent(event: AuditEventRecord): boolean {
+  if (phaseMatches(event.phase, ["summary", "review", "verification"])) {
+    return false;
+  }
+  const type = event.type.toLowerCase();
+  const summary = event.summary.toLowerCase();
+  return (
+    phaseMatches(event.phase, ["market", "analysis", "candidate"]) ||
+    type.includes("screen") ||
+    type.includes("scan") ||
+    type.includes("opportunity") ||
+    type.includes("analysis") ||
+    summary.includes("scan") ||
+    summary.includes("selected") ||
+    summary.includes("screen")
+  );
+}
+
+function isPortfolioEvent(event: AuditEventRecord): boolean {
+  if (phaseMatches(event.phase, ["summary", "review", "verification"])) {
+    return false;
+  }
+  const type = event.type.toLowerCase();
+  const summary = event.summary.toLowerCase();
+  return (
+    phaseMatches(event.phase, ["decision", "intent", "risk"]) ||
+    type.includes("portfolio") ||
+    type.includes("intent") ||
+    type.includes("decision") ||
+    summary.includes("portfolio") ||
+    summary.includes("decision")
+  );
+}
+
+function isV3AuditCycle(cycleId: string, events: AuditEventRecord[]): boolean {
+  const normalizedCycleId = cycleId.toLowerCase();
+  return (
+    normalizedCycleId.startsWith("v3") ||
+    events.some(
+      (event) =>
+        event.tags.some((tag) => tag.toLowerCase() === "v3") ||
+        event.type.toLowerCase().includes("v3") ||
+        event.summary.toLowerCase().includes("v3")
+    )
+  );
+}
+
+function missingV3FinalSummaryFields(payload: unknown): string[] {
+  if (!isRecord(payload)) {
+    return ["structured summary payload"];
+  }
+  const missing: string[] = [];
+  if (!hasAnyKey(payload, ["strategyFile", "strategyPath"])) {
+    missing.push("strategyFile");
+  }
+  if (!hasAnyKey(payload, ["config", "exchange"])) {
+    missing.push("config/exchange");
+  }
+  if (!hasAnyKey(payload, ["accountSummary"])) {
+    missing.push("accountSummary");
+  }
+  if (!hasAnyKey(payload, ["portfolioDecision", "decision", "portfolioSummary"])) {
+    missing.push("portfolioDecision");
+  }
+  if (!hasAnyKey(payload, ["actions", "actionSummary", "executionResult", "executionResults"])) {
+    missing.push("actions/actionSummary");
+  }
+  if (!hasAnyKey(payload, ["nextRoundFocus", "nextFocus"])) {
+    missing.push("nextRoundFocus");
+  }
+  return missing;
+}
+
+function hasAnyKey(record: Record<string, unknown>, keys: string[]): boolean {
+  return keys.some((key) => {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      return true;
+    }
+    if (isRecord(value)) {
+      return Object.keys(value).length > 0;
+    }
+    return value !== undefined && value !== null && String(value).trim() !== "";
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

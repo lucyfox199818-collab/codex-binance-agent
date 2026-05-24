@@ -120,10 +120,13 @@ export interface CycleReport {
   strategyEvents: AuditEventRecord[];
   dataEvents: AuditEventRecord[];
   analysisEvents: AuditEventRecord[];
+  screeningEvents: AuditEventRecord[];
   decisionEvents: AuditEventRecord[];
+  portfolioEvents: AuditEventRecord[];
   riskEvents: AuditEventRecord[];
   actionEvents: AuditEventRecord[];
   verificationEvents: AuditEventRecord[];
+  summaryEvents: AuditEventRecord[];
   candidates: AuditEventRecord[];
   executionEvents: AuditEventRecord[];
   verification: ChainVerification;

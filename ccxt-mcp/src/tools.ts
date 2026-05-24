@@ -1640,6 +1640,10 @@ export function createToolHandlers(config: CcxtMcpConfig, exchangeProvider: Exch
         }
 
         return await withExchange(async (exchange) => {
+          const extraParams = cleanParams(args?.params);
+          const replaceExistingClosePosition =
+            optionalBooleanLike(extraParams, "replaceExistingClosePosition") === true;
+
           if (optionalBooleanLike(binanceAlgoPayload, "closePosition") === true) {
             const openAlgoOrders = await invoke(exchange, "fapiPrivateGetOpenAlgoOrders", [
               {
@@ -1649,6 +1653,39 @@ export function createToolHandlers(config: CcxtMcpConfig, exchangeProvider: Exch
             ]);
             const existingOrder = findMatchingClosePositionAlgoOrder(openAlgoOrders, binanceAlgoPayload);
             if (existingOrder) {
+              if (replaceExistingClosePosition) {
+                const algoId = stringFromRecord(existingOrder, ["algoId"]);
+                if (!algoId) {
+                  return {
+                    duplicate: true,
+                    exchange: config.exchangeId,
+                    reason: "Matching Binance futures close-position algo order already exists but has no algoId to replace",
+                    wouldCall: "fapiPrivatePostAlgoOrder",
+                    params: binanceAlgoPayload,
+                    existingOrder
+                  };
+                }
+
+                const cancelParams: JsonRecord = {
+                  symbol: binanceAlgoPayload.symbol,
+                  algoId
+                };
+                if (binanceAlgoPayload.recvWindow !== undefined) {
+                  cancelParams.recvWindow = binanceAlgoPayload.recvWindow;
+                }
+
+                const canceledOrder = await invoke(exchange, "fapiPrivateDeleteAlgoOrder", [cancelParams]);
+                const newOrder = await invoke(exchange, "fapiPrivatePostAlgoOrder", [binanceAlgoPayload]);
+                return {
+                  replaced: true,
+                  exchange: config.exchangeId,
+                  canceledOrder,
+                  newOrder,
+                  replacedExistingOrder: existingOrder,
+                  params: binanceAlgoPayload
+                };
+              }
+
               return {
                 duplicate: true,
                 exchange: config.exchangeId,

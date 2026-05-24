@@ -109,9 +109,104 @@ select {
   padding: 18px;
 }
 
+.report-stack {
+  display: grid;
+  gap: 14px;
+}
+
 .grid {
   display: grid;
   grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.overview-band {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #cfd8e2;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.overview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.overview-head h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+
+.overview-head p {
+  margin: 0;
+  color: #46525e;
+  overflow-wrap: anywhere;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.metric {
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid #e7ebef;
+}
+
+.metric-label {
+  color: #5c6873;
+  font-size: 12px;
+}
+
+.metric-value {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.ok-bg {
+  border: 1px solid #b9e6cf;
+  background: #f0fff7;
+  color: #0a6f3c;
+}
+
+.warn-bg {
+  border: 1px solid #ffd38a;
+  background: #fff8e8;
+  color: #8a4d00;
+}
+
+.gap-list {
+  padding: 10px 12px;
+  border: 1px solid #ffd38a;
+  border-radius: 6px;
+  background: #fff8e8;
+  color: #5f3b00;
+  font-size: 13px;
+}
+
+.gap-list ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.v3-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 14px;
   align-items: start;
 }
@@ -160,6 +255,34 @@ select {
 .event-summary {
   margin-top: 4px;
   color: #46525e;
+  font-size: 13px;
+}
+
+.event-card-list {
+  display: grid;
+  gap: 8px;
+}
+
+.event-card {
+  width: 100%;
+  border: 1px solid #d8dee4;
+  background: #fbfcfd;
+  border-radius: 6px;
+  padding: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.event-card.active {
+  border-color: #0a7f48;
+  background: #edfdf5;
+}
+
+.event-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
   font-size: 13px;
 }
 
@@ -225,6 +348,19 @@ textarea {
   cursor: pointer;
 }
 
+.link-button {
+  border: 0;
+  padding: 0;
+  color: #1f6feb;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.muted {
+  color: #5c6873;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -245,6 +381,8 @@ textarea {
 @media (max-width: 980px) {
   .shell,
   .grid,
+  .kpi-grid,
+  .v3-board,
   .two-col {
     grid-template-columns: 1fr;
   }
