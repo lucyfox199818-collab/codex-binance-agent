@@ -34,7 +34,7 @@ Codex 的推理角色不可委派。Codex 必须亲自根据当前 MCP 返回数
 9. 对每个排序候选做 V2 交易确认，判断是否可交易；把每个候选的确认结果写入 `cta.decided`。
 10. 对每个可交易候选执行风控和仓位计算；把每个候选的仓位、风险收益、成本覆盖和剔除原因写入 `risk.sized`。
 11. 如果当前持仓数低于 `V2.txt` 定义的最大持仓上限，按 V2 允许的方式执行符合仓位、风险、成本、盘口和保护边界的新币种，直到候选用完或账户达到持仓上限。不得开重复净方向。
-12. 只有在候选通过 `V2.txt` 的仓位、风险、成本、盘口和保护边界，且真实交易明确启用时，才通过 `ccxt-mcp` 提交入场、退出、撤改或保护动作；提交前写 `execution.planned`，dry-run 写 `order.dry_run`，真实提交响应写 `order.submitted`。
+12. 只有在候选通过 `V2.txt` 的仓位、风险、成本、盘口和保护边界，且真实交易明确启用时，才通过 `ccxt-mcp` 提交入场、退出、撤改或保护动作；提交前写 `execution.planned`，dry-run 写 `order.dry_run`，真实提交响应写 `order.submitted`。任何真实 create/cancel/edit/close/set-leverage 等 mutating MCP 调用都必须先有同一 `cycle_id` 下的计划事件，调用返回后必须立即写入真实响应事件；不得把事后补录伪装成实时审计。
 13. 重新读取执行结果、持仓、合约普通未成交委托和 TP/SL 状态，并写入 `post.verify`。
 14. 输出强制最终每轮总结，写入 `summary.finalized` 审计事件。无论是不交易、阻塞、dry-run、错误、超时、用户暂停还是用户中断轮次，只要当前会话仍可继续写入审计，都必须输出；中断总结应标记为 `interrupted` 或 `paused`，并说明未完成阶段和真实执行状态。
 15. 在 `summary.finalized` 之后按配置间隔等待，并重复循环，同时动态管理所有已有持仓。等待只发生在两个轮次之间，不用于把当前轮挂起到未来确认。
@@ -68,6 +68,8 @@ V2 实盘决策轮次中，不得调用 web search、browser search 或通用网
 如果缺少必需的 `ccxt-mcp` 行情、账户或执行能力，报告缺失能力并返回阻塞/状态结果。不得静默退回自制扫描器。
 
 任何真实执行前，调用 `ccxt_get_config` 并确认交易所、账户凭据、需要时的代理存在性，以及交易开关状态。如果 `CCXT_ENABLE_TRADING` 不是 true，或 `CCXT_DRY_RUN` 是 true，把执行工具视为模拟，报告 dry-run 结果，不得声称已经真实下单。
+
+真实执行审计必须保持实时性：提交 mutating MCP 调用前，先写 `execution.planned` 或 `action.planned`，payload 必须包含具体工具、symbol、side、amount、price/trigger、positionSide、reduceOnly、final order book 时间、计划价、允许漂移、净保本/经济 R 相关计算。调用返回后立即写 `order.submitted`、`action.executed` 或 `action.remediated`，payload 必须包含交易所 orderId/algoId、avgPrice、executedQty、createTime/updateTime/triggerTime、错误码、撤销结果和本地写入时间。若因中断、网络或工具故障只能事后补录，事件和最终总结必须明确标记 `reconstructed`，写明真实交易所时间与本地补录时间；该补录不能作为下一次真实执行的前置审计门禁证据。
 
 每一轮都必须从当前 MCP payload 重新计算 V2 要求的合格池、long Top 5、short Top 5 和候选列表。上一轮结果只能作为对比，绝不能作为当前判断的输入或缓存。
 

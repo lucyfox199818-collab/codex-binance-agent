@@ -76,17 +76,22 @@
 4. 确认订单 payload 能映射到选定的 `ccxt-mcp` 执行工具。
 5. 当 `V2.txt` 要求时，确认已包含 stop loss 和 take profit。
 6. 检查 `V2.txt` 最大持仓约束：如果当前持仓数已经达到或超过上限，不提交新增执行。如果当前持仓数低于上限且候选通过 CTA、仓位、成本和保护检查，按排名顺序评估候选，并允许符合条件的新 symbol 入场，直到达到上限或候选用完。
+7. 对新开仓、保护移动、减仓、平仓、撤单和改杠杆等 mutating 动作，先写入同一 `cycle_id` 下的 `execution.planned` 或 `action.planned`。事件 payload 必须包含工具名、symbol、方向、数量、计划价、触发价、positionSide、reduceOnly、final order book 时间、允许最大价格漂移、净保本/经济 R 计算摘要和放弃条件。非紧急风险处置不得在计划事件写入失败时继续提交真实 mutating 调用。
 
-优先使用交易所支持的一体化保护订单工具，例如 `ccxt_create_order_with_take_profit_and_stop_loss`。否则使用交易所暴露的显式条件单工具提交入场和保护，例如 `ccxt_create_stop_loss_order`、`ccxt_create_take_profit_order`、`ccxt_create_trigger_order`、`ccxt_create_stop_order` 或 `ccxt_create_trailing_amount_order`。
+Binance USDT-M 新开仓必须优先使用 `ccxt_create_protected_futures_entry` 提交 protected entry。该工具会先创建 close-position 止损和止盈 algo 保护单，再提交入场单；如果保护或入场失败，工具会撤销已接受保护并返回失败阶段。不要把 `ccxt_create_order_with_take_profit_and_stop_loss` 当作 Binance USDT-M 的首选路径；服务端虽会把该 bracket 调用改路由到 protected entry，但 V2 执行计划和审计里应直接写明 `ccxt_create_protected_futures_entry`。
+
+非 Binance USDT-M 交易所才优先使用交易所支持的一体化保护订单工具，例如 `ccxt_create_order_with_take_profit_and_stop_loss`。否则使用交易所暴露的显式条件单工具提交入场和保护，例如 `ccxt_create_stop_loss_order`、`ccxt_create_take_profit_order`、`ccxt_create_trigger_order`、`ccxt_create_stop_order` 或 `ccxt_create_trailing_amount_order`。
 
 任何执行 MCP 调用后：
 
 1. 记录后端响应和可用的 order id。
-2. 重新读取账户快照。
-3. 验证持仓状态。
-4. 验证止损止盈保护。
-5. 验证是否出现无对应持仓的残留条件/保护单；如果出现，先取消或按 `V2.txt` 处理风险，并再次读取账户、持仓、合约普通未成交委托和保护单。
-6. 如果交易后保护缺失、不匹配、孤立或不清楚，按 `V2.txt` 处理风险；只限制受影响的 symbol/side，或在无法确认总仓位约束时暂停真实执行。
+2. 立即写入 `order.submitted`、`action.executed` 或 `action.remediated`，不得等到轮次结束再集中补写。payload 必须包含交易所 orderId/algoId、clientOrderId/clientAlgoId、avgPrice、executedQty、triggerPrice、createTime/updateTime/triggerTime、错误码、撤销结果、本地写入时间和 payload hash。
+3. 重新读取账户快照。
+4. 验证持仓状态。
+5. 验证止损止盈保护。
+6. 验证是否出现无对应持仓的残留条件/保护单；如果出现，先取消或按 `V2.txt` 处理风险，并再次读取账户、持仓、合约普通未成交委托和保护单。
+7. 如果交易后保护缺失、不匹配、孤立或不清楚，按 `V2.txt` 处理风险；只限制受影响的 symbol/side，或在无法确认总仓位约束时暂停真实执行。
+8. 如果动作已经发生但审计只能事后补录，事件 tags 或 payload 必须明确写 `reconstructed: true`，summary 必须写明“事后补录”，并记录交易所真实时间和本地补录时间。事后补录事件不能作为“提交前已审计”的证据，只能作为复盘证据。
 
 ## 强制最终总结
 

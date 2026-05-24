@@ -63,6 +63,7 @@ describe("createToolHandlers", () => {
       "ccxt_create_trigger_order",
       "ccxt_create_stop_loss_order",
       "ccxt_create_take_profit_order",
+      "ccxt_create_protected_futures_entry",
       "ccxt_create_order_with_take_profit_and_stop_loss",
       "ccxt_create_trailing_amount_order",
       "ccxt_cancel_all_orders",
@@ -651,6 +652,116 @@ describe("createToolHandlers", () => {
       workingType: "MARK_PRICE"
     });
     expect(exchange.createTakeProfitOrder).not.toHaveBeenCalled();
+  });
+
+  it("routes Binance futures bracket entries through quantity-based protection-first algo orders", async () => {
+    const exchange = {
+      ...createFakeExchange(),
+      id: "binance",
+      createOrderWithTakeProfitAndStopLoss: vi.fn().mockRejectedValue(new Error("unsupported bracket"))
+    };
+    exchange.fapiPrivatePostAlgoOrder
+      .mockResolvedValueOnce({ algoId: "sl-algo", algoStatus: "NEW" })
+      .mockResolvedValueOnce({ algoId: "tp-algo", algoStatus: "NEW" });
+    exchange.createOrder.mockResolvedValue({ id: "entry-1", status: "open" });
+
+    const handlers = createToolHandlers(
+      { ...config, exchangeId: "binance", defaultType: "future", enableTrading: true, dryRun: false },
+      () => exchange
+    );
+
+    const result = await handlers.ccxt_create_order_with_take_profit_and_stop_loss({
+      symbol: "HYPE/USDT:USDT",
+      type: "limit",
+      side: "buy",
+      amount: 1.66,
+      price: 60.01,
+      takeProfit: 60.54,
+      stopLoss: 59.73,
+      params: {
+        type: "future"
+      }
+    });
+
+    expect(result).toMatchObject({
+      protectedEntry: true,
+      exchange: "binance",
+      symbol: "HYPE/USDT:USDT",
+      entry: {
+        order: { id: "entry-1", status: "open" }
+      },
+      protections: {
+        stopLoss: { order: { algoId: "sl-algo", algoStatus: "NEW" } },
+        takeProfit: { order: { algoId: "tp-algo", algoStatus: "NEW" } }
+      }
+    });
+    expect(exchange.fapiPrivatePostAlgoOrder).toHaveBeenNthCalledWith(1, {
+      algoType: "CONDITIONAL",
+      symbol: "HYPEUSDT",
+      side: "SELL",
+      type: "STOP_MARKET",
+      triggerPrice: "59.73",
+      positionSide: "LONG",
+      workingType: "MARK_PRICE",
+      priceProtect: true,
+      quantity: "1.66"
+    });
+    expect(exchange.fapiPrivatePostAlgoOrder).toHaveBeenNthCalledWith(2, {
+      algoType: "CONDITIONAL",
+      symbol: "HYPEUSDT",
+      side: "SELL",
+      type: "TAKE_PROFIT_MARKET",
+      triggerPrice: "60.54",
+      positionSide: "LONG",
+      workingType: "MARK_PRICE",
+      priceProtect: true,
+      quantity: "1.66"
+    });
+    expect(exchange.createOrder).toHaveBeenCalledWith("HYPE/USDT:USDT", "limit", "buy", 1.66, 60.01, {
+      type: "future",
+      positionSide: "LONG"
+    });
+    expect(exchange.createOrderWithTakeProfitAndStopLoss).not.toHaveBeenCalled();
+  });
+
+  it("rolls back accepted protection when a Binance futures protected entry cannot finish", async () => {
+    const exchange = { ...createFakeExchange(), id: "binance" };
+    exchange.fapiPrivatePostAlgoOrder
+      .mockResolvedValueOnce({ algoId: "sl-algo", algoStatus: "NEW" })
+      .mockRejectedValueOnce(new Error("take profit rejected"));
+    exchange.fapiPrivateDeleteAlgoOrder.mockResolvedValue({ algoId: "sl-algo", algoStatus: "CANCELED" });
+
+    const handlers = createToolHandlers(
+      { ...config, exchangeId: "binance", defaultType: "future", enableTrading: true, dryRun: false },
+      () => exchange
+    );
+
+    const result = await handlers.ccxt_create_order_with_take_profit_and_stop_loss({
+      symbol: "HYPE/USDT:USDT",
+      type: "limit",
+      side: "buy",
+      amount: 1.66,
+      price: 60.01,
+      takeProfit: 60.54,
+      stopLoss: 59.73,
+      params: {
+        type: "future"
+      }
+    });
+
+    expect(result).toMatchObject({
+      protectedEntry: false,
+      exchange: "binance",
+      stage: "takeProfit",
+      entryOrderCreated: false,
+      error: "take profit rejected",
+      rollback: [{ algoId: "sl-algo", result: { algoId: "sl-algo", algoStatus: "CANCELED" } }]
+    });
+    expect(exchange.fapiPrivateDeleteAlgoOrder).toHaveBeenCalledWith({
+      symbol: "HYPEUSDT",
+      algoId: "sl-algo"
+    });
+    expect(exchange.createOrder).not.toHaveBeenCalled();
   });
 
   it("dry-runs transfer-style account mutations when trading is not enabled", async () => {

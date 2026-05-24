@@ -151,6 +151,7 @@ Docker MCP stdio 配置示例：
 - `ccxt_create_trigger_order`
 - `ccxt_create_stop_loss_order`
 - `ccxt_create_take_profit_order`
+- `ccxt_create_protected_futures_entry`
 - `ccxt_create_order_with_take_profit_and_stop_loss`
 - `ccxt_create_trailing_amount_order`
 - `ccxt_create_trailing_percent_order`
@@ -164,6 +165,12 @@ Binance USDT-M close-position 保护单默认会跳过同合约、同方向、�
 `STOP_MARKET` / `TAKE_PROFIT_MARKET` algo 单。需要替换已有保护单时，在创建请求的
 `params` 里显式传 `replaceExistingClosePosition: true`；工具会先取消匹配的旧 algo 单，
 再提交新的 close-position 保护单，并返回撤单和新单结果。
+
+Binance USDT-M protected entry 应优先使用 `ccxt_create_protected_futures_entry`。该工具会先提交
+close-position 止损和止盈 algo 保护单，再提交入场单；如果任一保护单或入场单创建失败，会撤销已经
+接受的保护单并返回失败阶段。对 Binance futures 调用
+`ccxt_create_order_with_take_profit_and_stop_loss` 时，服务端也会自动走同一条保护优先路径，避免直通
+CCXT 当前不支持的 `createOrderWithTakeProfitAndStopLoss`。
 
 合约和账户变更：
 

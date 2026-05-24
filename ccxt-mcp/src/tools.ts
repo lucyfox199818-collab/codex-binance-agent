@@ -268,6 +268,17 @@ export const toolDefinitions: CcxtToolDefinition[] = [
       method: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
       args: z.array(z.unknown()).optional()
     }
+  },
+  {
+    name: "ccxt_create_protected_futures_entry",
+    title: "Create Protected Futures Entry",
+    description:
+      "Create a Binance USDT-M protected entry by submitting close-position stop-loss and take-profit algo orders before the entry order.",
+    inputSchema: {
+      ...orderCoreSchema,
+      stopLoss: z.number().positive(),
+      takeProfit: z.number().positive()
+    }
   }
 ];
 
@@ -1308,6 +1319,265 @@ function buildBinanceFuturesAlgoOrder(
   return payload;
 }
 
+function isBinanceFuturesConfig(config: CcxtMcpConfig): boolean {
+  return (
+    config.exchangeId === "binance" &&
+    (config.defaultType === "future" || config.defaultType === "swap")
+  );
+}
+
+function oppositeSide(side: unknown): "buy" | "sell" | undefined {
+  if (side === "buy") {
+    return "sell";
+  }
+  if (side === "sell") {
+    return "buy";
+  }
+  return undefined;
+}
+
+function defaultPositionSide(side: unknown, params: JsonRecord): string | undefined {
+  if (typeof params.positionSide === "string") {
+    return params.positionSide.toUpperCase();
+  }
+  if (side === "buy") {
+    return "LONG";
+  }
+  if (side === "sell") {
+    return "SHORT";
+  }
+  return undefined;
+}
+
+function protectedEntryError(
+  config: CcxtMcpConfig,
+  args: JsonRecord | undefined,
+  stage: string,
+  error: unknown,
+  rollback: unknown[],
+  entryOrderCreated = false
+): JsonRecord {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    protectedEntry: false,
+    exchange: config.exchangeId,
+    symbol: optionalString(args, "symbol"),
+    stage,
+    entryOrderCreated,
+    error: message,
+    rollback
+  };
+}
+
+function buildBinanceProtectedEntryPlan(config: CcxtMcpConfig, args: JsonRecord | undefined): JsonRecord | undefined {
+  if (!isBinanceFuturesConfig(config)) {
+    return undefined;
+  }
+
+  const stopLoss = optionalNumber(args, "stopLoss");
+  const takeProfit = optionalNumber(args, "takeProfit");
+  const exitSide = oppositeSide(args?.side);
+  if (!stopLoss || !takeProfit || !exitSide) {
+    return undefined;
+  }
+
+  const params = cleanParams(args?.params);
+  const positionSide = defaultPositionSide(args?.side, params);
+  const protectionParams: JsonRecord = {
+    ...params,
+    workingType: params.workingType ?? "MARK_PRICE",
+    priceProtect: params.priceProtect ?? true
+  };
+  if (positionSide) {
+    protectionParams.positionSide = positionSide;
+  }
+
+  const stopLossPayload = buildBinanceFuturesAlgoOrder(config, "ccxt_create_stop_loss_order", {
+    symbol: args?.symbol,
+    type: "market",
+    side: exitSide,
+    amount: args?.amount,
+    stopLossPrice: stopLoss,
+    params: protectionParams
+  });
+  const takeProfitPayload = buildBinanceFuturesAlgoOrder(config, "ccxt_create_take_profit_order", {
+    symbol: args?.symbol,
+    type: "market",
+    side: exitSide,
+    amount: args?.amount,
+    takeProfitPrice: takeProfit,
+    params: protectionParams
+  });
+
+  if (!stopLossPayload || !takeProfitPayload) {
+    return undefined;
+  }
+
+  const entryParams: JsonRecord = { ...params };
+  if (positionSide && entryParams.positionSide === undefined) {
+    entryParams.positionSide = positionSide;
+  }
+
+  return {
+    stopLossPayload,
+    takeProfitPayload,
+    entryArgs: [
+      args?.symbol,
+      args?.type,
+      args?.side,
+      args?.amount,
+      optionalNumber(args, "price"),
+      entryParams
+    ]
+  };
+}
+
+async function submitBinanceFuturesAlgoOrder(
+  config: CcxtMcpConfig,
+  exchange: ExchangeLike,
+  payload: JsonRecord,
+  extraParams: JsonRecord
+): Promise<unknown> {
+  const replaceExistingClosePosition =
+    optionalBooleanLike(extraParams, "replaceExistingClosePosition") === true;
+
+  if (optionalBooleanLike(payload, "closePosition") === true) {
+    const openAlgoOrders = await invoke(exchange, "fapiPrivateGetOpenAlgoOrders", [
+      {
+        symbol: payload.symbol,
+        algoType: "CONDITIONAL"
+      }
+    ]);
+    const existingOrder = findMatchingClosePositionAlgoOrder(openAlgoOrders, payload);
+    if (existingOrder) {
+      if (replaceExistingClosePosition) {
+        const algoId = stringFromRecord(existingOrder, ["algoId"]);
+        if (!algoId) {
+          return {
+            duplicate: true,
+            exchange: config.exchangeId,
+            reason: "Matching Binance futures close-position algo order already exists but has no algoId to replace",
+            wouldCall: "fapiPrivatePostAlgoOrder",
+            params: payload,
+            existingOrder
+          };
+        }
+
+        const cancelParams: JsonRecord = {
+          symbol: payload.symbol,
+          algoId
+        };
+        if (payload.recvWindow !== undefined) {
+          cancelParams.recvWindow = payload.recvWindow;
+        }
+
+        const canceledOrder = await invoke(exchange, "fapiPrivateDeleteAlgoOrder", [cancelParams]);
+        const newOrder = await invoke(exchange, "fapiPrivatePostAlgoOrder", [payload]);
+        return {
+          replaced: true,
+          exchange: config.exchangeId,
+          canceledOrder,
+          newOrder,
+          replacedExistingOrder: existingOrder,
+          params: payload
+        };
+      }
+
+      return {
+        duplicate: true,
+        exchange: config.exchangeId,
+        reason: "Matching Binance futures close-position algo order already exists",
+        wouldCall: "fapiPrivatePostAlgoOrder",
+        params: payload,
+        existingOrder
+      };
+    }
+  }
+
+  return await invoke(exchange, "fapiPrivatePostAlgoOrder", [payload]);
+}
+
+async function cancelAcceptedBinanceProtections(
+  exchange: ExchangeLike,
+  symbol: unknown,
+  protections: Array<{ kind: string; order: unknown }>
+): Promise<unknown[]> {
+  const rollback = [];
+  for (const protection of protections) {
+    const order = recordOrUndefined(protection.order);
+    const algoId = order ? stringFromRecord(order, ["algoId"]) : undefined;
+    if (!algoId) {
+      rollback.push({ kind: protection.kind, skipped: true, reason: "Accepted protection has no algoId" });
+      continue;
+    }
+
+    const result = await invoke(exchange, "fapiPrivateDeleteAlgoOrder", [
+      {
+        symbol,
+        algoId
+      }
+    ]);
+    rollback.push({ algoId, result });
+  }
+  return rollback;
+}
+
+async function createBinanceProtectedFuturesEntry(
+  config: CcxtMcpConfig,
+  exchange: ExchangeLike,
+  args: JsonRecord | undefined
+): Promise<unknown> {
+  const plan = buildBinanceProtectedEntryPlan(config, args);
+  if (!plan) {
+    throw new Error("Protected futures entry is only supported for Binance futures with stopLoss and takeProfit.");
+  }
+
+  const stopLossPayload = plan.stopLossPayload as JsonRecord;
+  const takeProfitPayload = plan.takeProfitPayload as JsonRecord;
+  const entryArgs = Array.isArray(plan.entryArgs) ? plan.entryArgs : [];
+  const extraParams = cleanParams(args?.params);
+  const acceptedProtections: Array<{ kind: string; order: unknown }> = [];
+
+  if (!config.enableTrading || config.dryRun) {
+    return dryRunResult(config, "protectedFuturesEntry", {
+      stopLoss: stopLossPayload,
+      takeProfit: takeProfitPayload,
+      entryArgs
+    });
+  }
+
+  try {
+    const stopLossOrder = await submitBinanceFuturesAlgoOrder(config, exchange, stopLossPayload, extraParams);
+    acceptedProtections.push({ kind: "stopLoss", order: stopLossOrder });
+    const takeProfitOrder = await submitBinanceFuturesAlgoOrder(config, exchange, takeProfitPayload, extraParams);
+    acceptedProtections.push({ kind: "takeProfit", order: takeProfitOrder });
+  } catch (error) {
+    const rollback = await cancelAcceptedBinanceProtections(exchange, stopLossPayload.symbol, acceptedProtections);
+    return protectedEntryError(config, args, acceptedProtections.length === 0 ? "stopLoss" : "takeProfit", error, rollback);
+  }
+
+  try {
+    const entryOrder = await invoke(exchange, "createOrder", entryArgs);
+    return {
+      protectedEntry: true,
+      exchange: config.exchangeId,
+      symbol: optionalString(args, "symbol"),
+      protections: {
+        stopLoss: acceptedProtections[0],
+        takeProfit: acceptedProtections[1]
+      },
+      entry: {
+        method: "createOrder",
+        args: entryArgs,
+        order: entryOrder
+      }
+    };
+  } catch (error) {
+    const rollback = await cancelAcceptedBinanceProtections(exchange, stopLossPayload.symbol, acceptedProtections);
+    return protectedEntryError(config, args, "entry", error, rollback, false);
+  }
+}
+
 function recordOrUndefined(value: unknown): JsonRecord | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
@@ -1619,6 +1889,9 @@ export function createToolHandlers(config: CcxtMcpConfig, exchangeProvider: Exch
       );
     },
 
+    ccxt_create_protected_futures_entry: async (args) =>
+      withExchange((exchange) => createBinanceProtectedFuturesEntry(config, exchange, args)),
+
     ccxt_call: async (args) => {
       const method = String(args?.method ?? "");
       const methodArgs = Array.isArray(args?.args) ? args.args : [];
@@ -1633,6 +1906,13 @@ export function createToolHandlers(config: CcxtMcpConfig, exchangeProvider: Exch
 
   for (const spec of methodToolSpecs) {
     handlers[spec.name] = async (args) => {
+      if (
+        spec.name === "ccxt_create_order_with_take_profit_and_stop_loss" &&
+        buildBinanceProtectedEntryPlan(config, args)
+      ) {
+        return await withExchange((exchange) => createBinanceProtectedFuturesEntry(config, exchange, args));
+      }
+
       const binanceAlgoPayload = buildBinanceFuturesAlgoOrder(config, spec.name, args);
       if (binanceAlgoPayload) {
         if (spec.mutating && (!config.enableTrading || config.dryRun)) {
@@ -1641,63 +1921,7 @@ export function createToolHandlers(config: CcxtMcpConfig, exchangeProvider: Exch
 
         return await withExchange(async (exchange) => {
           const extraParams = cleanParams(args?.params);
-          const replaceExistingClosePosition =
-            optionalBooleanLike(extraParams, "replaceExistingClosePosition") === true;
-
-          if (optionalBooleanLike(binanceAlgoPayload, "closePosition") === true) {
-            const openAlgoOrders = await invoke(exchange, "fapiPrivateGetOpenAlgoOrders", [
-              {
-                symbol: binanceAlgoPayload.symbol,
-                algoType: "CONDITIONAL"
-              }
-            ]);
-            const existingOrder = findMatchingClosePositionAlgoOrder(openAlgoOrders, binanceAlgoPayload);
-            if (existingOrder) {
-              if (replaceExistingClosePosition) {
-                const algoId = stringFromRecord(existingOrder, ["algoId"]);
-                if (!algoId) {
-                  return {
-                    duplicate: true,
-                    exchange: config.exchangeId,
-                    reason: "Matching Binance futures close-position algo order already exists but has no algoId to replace",
-                    wouldCall: "fapiPrivatePostAlgoOrder",
-                    params: binanceAlgoPayload,
-                    existingOrder
-                  };
-                }
-
-                const cancelParams: JsonRecord = {
-                  symbol: binanceAlgoPayload.symbol,
-                  algoId
-                };
-                if (binanceAlgoPayload.recvWindow !== undefined) {
-                  cancelParams.recvWindow = binanceAlgoPayload.recvWindow;
-                }
-
-                const canceledOrder = await invoke(exchange, "fapiPrivateDeleteAlgoOrder", [cancelParams]);
-                const newOrder = await invoke(exchange, "fapiPrivatePostAlgoOrder", [binanceAlgoPayload]);
-                return {
-                  replaced: true,
-                  exchange: config.exchangeId,
-                  canceledOrder,
-                  newOrder,
-                  replacedExistingOrder: existingOrder,
-                  params: binanceAlgoPayload
-                };
-              }
-
-              return {
-                duplicate: true,
-                exchange: config.exchangeId,
-                reason: "Matching Binance futures close-position algo order already exists",
-                wouldCall: "fapiPrivatePostAlgoOrder",
-                params: binanceAlgoPayload,
-                existingOrder
-              };
-            }
-          }
-
-          return await invoke(exchange, "fapiPrivatePostAlgoOrder", [binanceAlgoPayload]);
+          return await submitBinanceFuturesAlgoOrder(config, exchange, binanceAlgoPayload, extraParams);
         });
       }
 
