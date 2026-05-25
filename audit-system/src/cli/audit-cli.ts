@@ -37,6 +37,12 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (command === "repair-execution-flags") {
+      const cycleId = process.argv[3];
+      console.log(JSON.stringify(store.repairExecutionFlags(cycleId)));
+      return;
+    }
+
     if (command === "cooldowns") {
       const subcommand = process.argv[3];
       if (!subcommand || subcommand === "list") {
@@ -111,6 +117,7 @@ function printHelp(): void {
       "  audit append < event.json",
       "  audit verify <cycle_id>",
       "  audit cycles",
+      "  audit repair-execution-flags [cycle_id]",
       "  audit cooldowns list [symbol]",
       "  audit cooldowns all",
       "  audit cooldowns check <symbol> <long|short>",

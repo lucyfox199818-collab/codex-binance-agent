@@ -169,6 +169,80 @@ describe("audit core", () => {
     store.close();
   });
 
+  it("does not mark no-order dry-run audit markers as execution", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+
+    store.appendEvent({
+      cycleId: "cycle-no-order-dry-run",
+      type: "cycle.started",
+      phase: "cycle",
+      summary: "cycle started",
+      payload: { ok: true }
+    });
+    store.appendEvent({
+      cycleId: "cycle-no-order-dry-run",
+      type: "order.dry_run",
+      phase: "execution",
+      summary: "No dry-run or live order submitted; V2 gates produced no executable plan.",
+      payload: { submitted: false },
+      tags: ["v2", "execution", "no_order"]
+    });
+
+    store.appendEvent({
+      cycleId: "cycle-real-dry-run",
+      type: "cycle.started",
+      phase: "cycle",
+      summary: "cycle started",
+      payload: { ok: true }
+    });
+    store.appendEvent({
+      cycleId: "cycle-real-dry-run",
+      type: "order.dry_run",
+      phase: "execution",
+      summary: "Dry-run order accepted",
+      payload: { submitted: true },
+      tags: ["v2", "execution"]
+    });
+
+    expect(store.getCycle("cycle-no-order-dry-run")?.hasExecution).toBe(false);
+    expect(store.getCycle("cycle-real-dry-run")?.hasExecution).toBe(true);
+    store.close();
+  });
+
+  it("repairs stale execution flags from persisted events", async () => {
+    const dataDir = await tempAuditDir();
+    const cycleId = "cycle-stale-no-order";
+    const store = new AuditStore({ dataDir });
+
+    store.appendEvent({
+      cycleId,
+      type: "cycle.started",
+      phase: "cycle",
+      summary: "cycle started",
+      payload: { ok: true }
+    });
+    store.appendEvent({
+      cycleId,
+      type: "order.dry_run",
+      phase: "execution",
+      summary: "Cycle submitted no dry-run or live order.",
+      payload: { submitted: false },
+      tags: ["v2", "execution", "no_order"]
+    });
+    store.close();
+
+    const db = new DatabaseSync(path.join(dataDir, "trading-audit.sqlite"));
+    db.prepare("UPDATE cycles SET has_execution = 1 WHERE cycle_id = ?").run(cycleId);
+    db.close();
+
+    const reopened = new AuditStore({ dataDir });
+    expect(reopened.getCycle(cycleId)?.hasExecution).toBe(true);
+    expect(reopened.repairExecutionFlags(cycleId)).toEqual({ checked: 1, updated: 1 });
+    expect(reopened.getCycle(cycleId)?.hasExecution).toBe(false);
+    reopened.close();
+  });
+
   it("does not report overview gaps for detailed phase names", async () => {
     const dataDir = await tempAuditDir();
     const store = new AuditStore({ dataDir });

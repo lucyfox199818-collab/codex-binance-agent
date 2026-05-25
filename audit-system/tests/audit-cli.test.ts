@@ -2,6 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vitest";
 
@@ -125,6 +126,42 @@ describe("audit CLI", () => {
     expect(cycles.some((cycle) => cycle.symbols.includes("BTC/USDT:USDT"))).toBe(true);
     expect(store.verifyCycle(cycles[0]!.cycleId).ok).toBe(true);
     store.close();
+  });
+
+  it("repairs stale execution flags through the CLI", async () => {
+    const dataDir = await tempAuditDir();
+    const cycleId = "cli-stale-no-order";
+    const store = new AuditStore({ dataDir });
+
+    store.appendEvent({
+      cycleId,
+      type: "cycle.started",
+      phase: "cycle",
+      summary: "cycle started",
+      payload: { ok: true }
+    });
+    store.appendEvent({
+      cycleId,
+      type: "order.dry_run",
+      phase: "execution",
+      summary: "No dry-run or live order submitted.",
+      payload: { submitted: false },
+      tags: ["v2", "execution", "no_order"]
+    });
+    store.close();
+
+    const db = new DatabaseSync(path.join(dataDir, "trading-audit.sqlite"));
+    db.prepare("UPDATE cycles SET has_execution = 1 WHERE cycle_id = ?").run(cycleId);
+    db.close();
+
+    const repaired = await runNode(["--import", "tsx", "src/cli/audit-cli.ts", "repair-execution-flags", cycleId], {
+      dataDir
+    });
+    expect(JSON.parse(repaired)).toEqual({ checked: 1, updated: 1 });
+
+    const reopened = new AuditStore({ dataDir });
+    expect(reopened.getCycle(cycleId)?.hasExecution).toBe(false);
+    reopened.close();
   });
 
   it("manages cooldowns through the CLI: set, check, list, clear", async () => {

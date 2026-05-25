@@ -219,7 +219,7 @@ Binance USDT-M 分层退出不得使用 `closePosition=true` 做 TP1。`closePos
 - **Audit**：cycle_id、audit data dir、audit write status、hash chain status（可选 `audit verify` 结果）、missing audit stages。
 - **Cooldown**：active list（symbol、side、reason、remaining_seconds、source_cycle_id）、cycle 内新写入 cooldown 列表、cycle 内 manual_clear 列表（含 override_reason）、cooldown CLI errors。
 - **Data acquisition**：account、positions、合约普通未成交委托、conditional/protection orders、market batch calls、使用的 incremental cursors、missing data 和 rate-limit/API issues。
-- **Account and exposure**：可用的 equity/balance 字段、当前持仓数、距离 V2 最大持仓上限的剩余名额、margin/leverage state、`account_state`（normal / ACCOUNT_TOO_SMALL）、已有持仓管理动作。
+- **Account and exposure**：可用的 equity/balance 字段、当前持仓数、距离 V2 最大持仓上限的剩余名额、margin/leverage state、`account_state`（normal / constrained_by_specific_gate）、已有持仓管理动作。
 - **Market scan**：full-universe size、eligible count、exclusions、seed list size、long Top 5、short Top 5，以及排名是否从当前轮数据重新计算。
 - **CTA and candidates**：每个被考虑的排序候选、CTA pass/fail、veto/downrank context，以及被拒绝时的明确 no-trade reason（含 `cooldown_blocked` / `funding_window_blocked` / `economic_r_blocked` / `protection_ladder_blocked` / `execution_quality_degraded`）。
 - **Risk and sizing**：每个候选的 risk、stop distance、target、RR、size、leverage/margin impact、`r_usdt`、`economic_r_check`、`expected_funding_pnl_usdt`、`funding_window_state`、`account_state` 和 position-cap decision。

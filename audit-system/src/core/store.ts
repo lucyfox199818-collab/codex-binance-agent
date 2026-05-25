@@ -402,6 +402,28 @@ export class AuditStore {
     return { cycleId, ok: true, checkedEvents };
   }
 
+  repairExecutionFlags(cycleId?: string): { checked: number; updated: number } {
+    const cycles = cycleId
+      ? [this.getCycle(cycleId)].filter((cycle): cycle is AuditCycleRecord => Boolean(cycle))
+      : this.listCycles();
+    if (cycleId && cycles.length === 0) {
+      throw new Error(`Unknown audit cycle: ${cycleId}`);
+    }
+
+    const update = this.db.prepare("UPDATE cycles SET has_execution = ? WHERE cycle_id = ?");
+    let checked = 0;
+    let updated = 0;
+    for (const cycle of cycles) {
+      const hasExecution = this.listEvents(cycle.cycleId).some(isExecutionFlagEvent);
+      checked += 1;
+      if (cycle.hasExecution !== hasExecution) {
+        update.run(hasExecution ? 1 : 0, cycle.cycleId);
+        updated += 1;
+      }
+    }
+    return { checked, updated };
+  }
+
   setCooldown(input: CooldownInput): CooldownEntry {
     const reason = input.reason;
     if (!isCooldownReason(reason)) {
@@ -663,12 +685,7 @@ export class AuditStore {
       symbols.add(record.symbol);
     }
     const isFinal = record.type === "summary.finalized";
-    const hasExecution =
-      current.hasExecution ||
-      record.type === "order.submitted" ||
-      record.type === "order.dry_run" ||
-      record.type === "action.executed" ||
-      record.type === "action.remediated";
+    const hasExecution = current.hasExecution || isExecutionFlagEvent(record);
     this.db
       .prepare(
         `UPDATE cycles
@@ -762,6 +779,17 @@ function cooldownFromRow(row: CooldownRow): CooldownEntry {
 
 function isCooldownReason(value: unknown): value is CooldownReason {
   return typeof value === "string" && Object.prototype.hasOwnProperty.call(DEFAULT_COOLDOWN_SECONDS, value);
+}
+
+function isExecutionFlagEvent(record: Pick<AuditEventRecord, "type" | "tags">): boolean {
+  if (record.type === "order.dry_run") {
+    return !hasNormalizedTag(record.tags, "no_order");
+  }
+  return record.type === "order.submitted" || record.type === "action.executed" || record.type === "action.remediated";
+}
+
+function hasNormalizedTag(tags: string[], target: string): boolean {
+  return tags.some((tag) => tag.toLowerCase().replace(/[-\s]+/g, "_") === target);
 }
 
 function computeEventHash(record: Omit<AuditEventRecord, "eventHash">): string {
