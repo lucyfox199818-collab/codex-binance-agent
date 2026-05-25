@@ -14,6 +14,7 @@
     "dev": "npm run build:ui && tsx src/server/index.ts",
     "sample": "tsx src/cli/record-sample.ts",
     "sample:v3": "tsx src/cli/record-v3-sample.ts",
+    "sample:large": "tsx src/cli/record-large-sample.ts",
     "audit": "tsx src/cli/audit-cli.ts"
   },
   "engines": {

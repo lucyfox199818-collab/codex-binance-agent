@@ -87,6 +87,32 @@ export interface AuditCycleRecord {
   summary?: string;
 }
 
+export interface PagedResult<T> {
+  items: T[];
+  nextCursor?: string;
+  total: number;
+}
+
+export interface CycleQuery {
+  q?: string;
+  status?: AuditCycleRecord["status"];
+  symbol?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface EventQuery {
+  q?: string;
+  phases?: AuditPhase[];
+  type?: string;
+  symbol?: string;
+  severity?: AuditSeverity;
+  limit?: number;
+  cursor?: string;
+}
+
 export interface ReviewNote {
   noteId: string;
   cycleId: string;
@@ -112,6 +138,54 @@ export interface ChainVerification {
   checkedEvents: number;
   brokenAtEventId?: string;
   reason?: string;
+  issues?: string[];
+}
+
+export type CooldownSide = "long" | "short" | "both";
+
+export type CooldownReason =
+  | "stop"
+  | "abort"
+  | "manual_close"
+  | "external";
+
+export interface CooldownEntry {
+  cooldownId: string;
+  symbol: string;
+  side: CooldownSide;
+  reason: CooldownReason;
+  startedAt: string;
+  untilTs: string;
+  cycleId?: string;
+  notes?: string;
+  clearedAt?: string;
+  clearReason?: string;
+  clearCycleId?: string;
+  clearNotes?: string;
+}
+
+export interface CooldownInput {
+  symbol: string;
+  side: CooldownSide;
+  reason: CooldownReason;
+  durationSeconds?: number;
+  startedAt?: string;
+  cycleId?: string;
+  notes?: string;
+}
+
+export interface CooldownClearOptions {
+  reason?: string;
+  cycleId?: string;
+  notes?: string;
+}
+
+export interface CooldownCheck {
+  symbol: string;
+  side: "long" | "short";
+  blocked: boolean;
+  remainingSeconds?: number;
+  entry?: CooldownEntry;
 }
 
 export interface CycleReport {
@@ -131,4 +205,14 @@ export interface CycleReport {
   executionEvents: AuditEventRecord[];
   verification: ChainVerification;
   notes: ReviewNote[];
+}
+
+export interface CycleOverview {
+  cycle: AuditCycleRecord;
+  verification: ChainVerification;
+  phaseCounts: Record<string, number>;
+  severityCounts: Record<string, number>;
+  lastEvent?: AuditEventRecord;
+  finalSummarySequence?: number;
+  gaps: string[];
 }

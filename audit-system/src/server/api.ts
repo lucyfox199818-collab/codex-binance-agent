@@ -3,6 +3,7 @@ import { URL } from "node:url";
 
 import { AuditStore } from "../core/store.js";
 import { serveStatic } from "./static.js";
+import type { AuditCycleRecord, AuditSeverity, EventQuery } from "../shared/types.js";
 
 export interface AuditServerOptions {
   dataDir: string;
@@ -41,13 +42,20 @@ async function handleApiRequest(
 ): Promise<void> {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   if (request.method === "GET" && url.pathname === "/api/cycles") {
-    writeJson(response, 200, store.listCycles());
+    writeJson(response, 200, url.search ? store.listCyclesPage(parseCycleQuery(url)) : store.listCycles());
     return;
   }
 
   const cycleEventsMatch = url.pathname.match(/^\/api\/cycles\/([^/]+)\/events$/);
   if (request.method === "GET" && cycleEventsMatch) {
-    writeJson(response, 200, store.listEvents(decodeURIComponent(cycleEventsMatch[1]!)));
+    const cycleId = decodeURIComponent(cycleEventsMatch[1]!);
+    writeJson(response, 200, url.search ? store.listEventsPage(cycleId, parseEventQuery(url)) : store.listEvents(cycleId));
+    return;
+  }
+
+  const cycleOverviewMatch = url.pathname.match(/^\/api\/cycles\/([^/]+)\/overview$/);
+  if (request.method === "GET" && cycleOverviewMatch) {
+    writeJson(response, 200, store.getCycleOverview(decodeURIComponent(cycleOverviewMatch[1]!)));
     return;
   }
 
@@ -155,4 +163,71 @@ function stringArrayField(record: Record<string, unknown>, key: string): string[
     throw new Error(`${key} must be an array`);
   }
   return value.filter((item): item is string => typeof item === "string");
+}
+
+function parseCycleQuery(url: URL): {
+  q?: string;
+  status?: AuditCycleRecord["status"];
+  symbol?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  cursor?: string;
+} {
+  return stripUndefined({
+    q: optionalParam(url, "q"),
+    status: parseCycleStatus(optionalParam(url, "status")),
+    symbol: optionalParam(url, "symbol"),
+    from: optionalParam(url, "from"),
+    to: optionalParam(url, "to"),
+    limit: numberParam(url, "limit"),
+    cursor: optionalParam(url, "cursor")
+  });
+}
+
+function parseEventQuery(url: URL): EventQuery {
+  return stripUndefined({
+    q: optionalParam(url, "q"),
+    phases: phasesParam(url),
+    type: optionalParam(url, "type"),
+    symbol: optionalParam(url, "symbol"),
+    severity: parseSeverity(optionalParam(url, "severity")),
+    limit: numberParam(url, "limit"),
+    cursor: optionalParam(url, "cursor")
+  });
+}
+
+function optionalParam(url: URL, key: string): string | undefined {
+  const value = url.searchParams.get(key)?.trim();
+  return value ? value : undefined;
+}
+
+function numberParam(url: URL, key: string): number | undefined {
+  const value = optionalParam(url, key);
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function phasesParam(url: URL): EventQuery["phases"] | undefined {
+  const values = url.searchParams
+    .getAll("phase")
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return values.length ? (values as EventQuery["phases"]) : undefined;
+}
+
+function parseCycleStatus(value: string | undefined): AuditCycleRecord["status"] | undefined {
+  return value === "running" || value === "completed" || value === "error" ? value : undefined;
+}
+
+function parseSeverity(value: string | undefined): AuditSeverity | undefined {
+  return value === "debug" || value === "info" || value === "warn" || value === "error" ? value : undefined;
+}
+
+function stripUndefined<T extends Record<string, unknown>>(record: T): T {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined)) as T;
 }

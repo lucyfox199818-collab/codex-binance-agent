@@ -11,10 +11,21 @@ async function tempAuditDir(): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), "audit-cli-"));
 }
 
-async function runNode(args: string[], options: { dataDir: string; input?: string }): Promise<string> {
+async function runNode(args: string[], options: { dataDir: string; input?: string; env?: Record<string, string> }): Promise<string> {
+  const result = await runNodeRaw(args, options);
+  if (result.code !== 0) {
+    throw new Error(`Command failed (${result.code}): ${result.stderr}`);
+  }
+  return result.stdout.trim();
+}
+
+async function runNodeRaw(
+  args: string[],
+  options: { dataDir: string; input?: string; env?: Record<string, string> }
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
   const child = spawn("node", args, {
     cwd: path.resolve("."),
-    env: { ...process.env, AUDIT_DATA_DIR: options.dataDir },
+    env: { ...process.env, ...options.env, AUDIT_DATA_DIR: options.dataDir },
     stdio: ["pipe", "pipe", "pipe"]
   });
   let stdout = "";
@@ -34,10 +45,7 @@ async function runNode(args: string[], options: { dataDir: string; input?: strin
   const code = await new Promise<number | null>((resolve) => {
     child.on("close", resolve);
   });
-  if (code !== 0) {
-    throw new Error(`Command failed (${code}): ${stderr}`);
-  }
-  return stdout.trim();
+  return { code, stdout: stdout.trim(), stderr };
 }
 
 describe("audit CLI", () => {
@@ -96,5 +104,116 @@ describe("audit CLI", () => {
     const jsonl = await readFile(jsonlPath, "utf8");
     expect(jsonl.split("\n").filter(Boolean)).toHaveLength(10);
     store.close();
+  });
+
+  it("creates a configurable large local sample for UI scale testing", async () => {
+    const dataDir = await tempAuditDir();
+
+    await runNode(["--import", "tsx", "src/cli/record-large-sample.ts"], {
+      dataDir,
+      env: {
+        AUDIT_LARGE_CYCLES: "4",
+        AUDIT_LARGE_EVENTS: "12"
+      }
+    });
+
+    const store = new AuditStore({ dataDir });
+    const cycles = store.listCycles();
+    expect(cycles).toHaveLength(4);
+    expect(cycles.every((cycle) => cycle.status === "completed")).toBe(true);
+    expect(cycles.every((cycle) => cycle.eventCount >= 12)).toBe(true);
+    expect(cycles.some((cycle) => cycle.symbols.includes("BTC/USDT:USDT"))).toBe(true);
+    expect(store.verifyCycle(cycles[0]!.cycleId).ok).toBe(true);
+    store.close();
+  });
+
+  it("manages cooldowns through the CLI: set, check, list, clear", async () => {
+    const dataDir = await tempAuditDir();
+
+    const setResult = await runNode(
+      ["--import", "tsx", "src/cli/audit-cli.ts", "cooldowns", "set"],
+      {
+        dataDir,
+        input: JSON.stringify({
+          symbol: "HYPE/USDT:USDT",
+          side: "long",
+          reason: "stop",
+          durationSeconds: 120,
+          cycleId: "v2-cli-cooldown-1",
+          notes: "stopped at 58.56"
+        })
+      }
+    );
+    const entry = JSON.parse(setResult) as { cooldownId: string; symbol: string; untilTs: string };
+    expect(entry.symbol).toBe("HYPE/USDT:USDT");
+    expect(entry.cooldownId).toBeTruthy();
+
+    const checkBlocked = await runNodeRaw(
+      ["--import", "tsx", "src/cli/audit-cli.ts", "cooldowns", "check", "HYPE/USDT:USDT", "long"],
+      { dataDir }
+    );
+    expect(checkBlocked.code).toBe(2);
+    const blockedDecision = JSON.parse(checkBlocked.stdout) as {
+      blocked: boolean;
+      remainingSeconds?: number;
+    };
+    expect(blockedDecision.blocked).toBe(true);
+    expect(blockedDecision.remainingSeconds).toBeGreaterThan(0);
+
+    const checkAllowed = await runNode(
+      ["--import", "tsx", "src/cli/audit-cli.ts", "cooldowns", "check", "HYPE/USDT:USDT", "short"],
+      { dataDir }
+    );
+    expect(JSON.parse(checkAllowed)).toMatchObject({ blocked: false });
+
+    const list = await runNode(
+      ["--import", "tsx", "src/cli/audit-cli.ts", "cooldowns", "list"],
+      { dataDir }
+    );
+    const active = JSON.parse(list) as Array<{ symbol: string }>;
+    expect(active).toHaveLength(1);
+    expect(active[0]!.symbol).toBe("HYPE/USDT:USDT");
+
+    const cleared = await runNode(
+      [
+        "--import",
+        "tsx",
+        "src/cli/audit-cli.ts",
+        "cooldowns",
+        "clear",
+        "HYPE/USDT:USDT",
+        "long",
+        "--cycle-id",
+        "v2-cli-clear-1",
+        "--notes",
+        "manual clear after a new closed 15m/1h structure"
+      ],
+      { dataDir }
+    );
+    expect(JSON.parse(cleared)).toMatchObject({
+      cleared: 1,
+      clearCycleId: "v2-cli-clear-1",
+      clearNotes: "manual clear after a new closed 15m/1h structure"
+    });
+
+    const checkAfterClear = await runNode(
+      ["--import", "tsx", "src/cli/audit-cli.ts", "cooldowns", "check", "HYPE/USDT:USDT", "long"],
+      { dataDir }
+    );
+    expect(JSON.parse(checkAfterClear)).toMatchObject({ blocked: false });
+
+    const all = await runNode(["--import", "tsx", "src/cli/audit-cli.ts", "cooldowns", "all"], { dataDir });
+    const entries = JSON.parse(all) as Array<{
+      symbol: string;
+      clearReason?: string;
+      clearCycleId?: string;
+      clearNotes?: string;
+    }>;
+    expect(entries[0]).toMatchObject({
+      symbol: "HYPE/USDT:USDT",
+      clearReason: "manual_clear",
+      clearCycleId: "v2-cli-clear-1",
+      clearNotes: "manual clear after a new closed 15m/1h structure"
+    });
   });
 });

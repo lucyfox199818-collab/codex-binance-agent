@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuditRecorder } from "../src/core/recorder.js";
 import { AuditStore } from "../src/core/store.js";
 import { createAuditServer } from "../src/server/api.js";
+import type { AuditPhase, AuditEventInput } from "../src/shared/types.js";
 
 async function tempAuditDir(): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), "audit-server-"));
@@ -28,6 +29,40 @@ async function getJson<T>(baseUrl: string, pathname: string): Promise<T> {
   const response = await fetch(`${baseUrl}${pathname}`);
   expect(response.status).toBe(200);
   return (await response.json()) as T;
+}
+
+function appendCompletedCycle(
+  store: AuditStore,
+  cycleId: string,
+  symbol: string,
+  events: Array<{ phase: AuditPhase; type: string; summary: string }>
+): void {
+  store.appendEvent({
+    cycleId,
+    type: "cycle.started",
+    phase: "cycle",
+    summary: `${cycleId} started`,
+    symbol,
+    payload: { symbol }
+  });
+  for (const event of events) {
+    store.appendEvent({
+      cycleId,
+      type: event.type as AuditEventInput["type"],
+      phase: event.phase,
+      summary: event.summary,
+      symbol,
+      payload: { symbol, phase: event.phase, summary: event.summary }
+    });
+  }
+  store.appendEvent({
+    cycleId,
+    type: "summary.finalized",
+    phase: "summary",
+    summary: `${cycleId} finalized`,
+    symbol,
+    payload: { result: "done", symbol }
+  });
 }
 
 describe("audit server", () => {
@@ -126,5 +161,69 @@ describe("audit server", () => {
     expect(noteResponse.status).toBe(201);
     const note = (await noteResponse.json()) as { body: string; tags: string[] };
     expect(note).toMatchObject({ body: "reviewed", tags: ["postmortem"] });
+  });
+
+  it("serves paged and filtered cycles/events while preserving legacy array responses", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+    appendCompletedCycle(store, "scale-btc", "BTC/USDT:USDT", [
+      { phase: "analysis", type: "analysis.noted", summary: "BTC analysis one" },
+      { phase: "risk", type: "risk.sized", summary: "BTC risk" }
+    ]);
+    appendCompletedCycle(store, "scale-eth", "ETH/USDT:USDT", [
+      { phase: "analysis", type: "analysis.noted", summary: "ETH analysis one" },
+      { phase: "analysis", type: "analysis.noted", summary: "ETH analysis two" },
+      { phase: "execution", type: "execution.planned", summary: "ETH execution" }
+    ]);
+    appendCompletedCycle(store, "scale-sol", "SOL/USDT:USDT", [
+      { phase: "candidate", type: "candidate.ranked", summary: "SOL candidate" }
+    ]);
+    store.close();
+
+    server = createAuditServer({ dataDir });
+    const baseUrl = await listen(server);
+
+    const legacyCycles = await getJson<Array<{ cycleId: string }>>(baseUrl, "/api/cycles");
+    expect(Array.isArray(legacyCycles)).toBe(true);
+    expect(legacyCycles).toHaveLength(3);
+
+    const cyclePage = await getJson<{
+      items: Array<{ cycleId: string }>;
+      nextCursor?: string;
+      total: number;
+    }>(baseUrl, "/api/cycles?limit=2");
+    expect(cyclePage.items).toHaveLength(2);
+    expect(cyclePage.total).toBe(3);
+    expect(cyclePage.nextCursor).toBeTruthy();
+
+    const filteredCycles = await getJson<{ items: Array<{ cycleId: string }>; total: number }>(
+      baseUrl,
+      "/api/cycles?q=ETH&status=completed"
+    );
+    expect(filteredCycles.items.map((cycle) => cycle.cycleId)).toEqual(["scale-eth"]);
+    expect(filteredCycles.total).toBe(1);
+
+    const legacyEvents = await getJson<Array<{ phase: string }>>(baseUrl, "/api/cycles/scale-eth/events");
+    expect(Array.isArray(legacyEvents)).toBe(true);
+    expect(legacyEvents).toHaveLength(5);
+
+    const analysisPage = await getJson<{
+      items: Array<{ phase: string; summary: string }>;
+      nextCursor?: string;
+      total: number;
+    }>(baseUrl, "/api/cycles/scale-eth/events?phase=analysis&limit=1");
+    expect(analysisPage.items).toHaveLength(1);
+    expect(analysisPage.items[0]).toMatchObject({ phase: "analysis", summary: "ETH analysis one" });
+    expect(analysisPage.total).toBe(2);
+    expect(analysisPage.nextCursor).toBeTruthy();
+
+    const overview = await getJson<{
+      cycle: { cycleId: string };
+      phaseCounts: Record<string, number>;
+      gaps: string[];
+    }>(baseUrl, "/api/cycles/scale-eth/overview");
+    expect(overview.cycle.cycleId).toBe("scale-eth");
+    expect(overview.phaseCounts.analysis).toBe(2);
+    expect(overview.gaps).toContain("缺少组合层面的决策记录");
   });
 });

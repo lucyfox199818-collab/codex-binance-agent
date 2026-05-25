@@ -6,9 +6,10 @@
 
 - SQLite + JSONL + gzipped payload blob 双写/归档。
 - 每条事件包含 payload hash、previous hash 和 event hash，支持单轮 hash chain 校验。
+- 持久 cooldown 注册表：保存 symbol/side 级别的入场冷却（止损、abort、主动平仓、外部停止），供策略侧在新入场前查询和写入。
 - CLI 可从 JSON stdin 写入事件，方便未来策略轮次逐阶段落盘。
-- API 可查询 cycles、events、payload、payload diff、symbol 历史决策、复盘报告和 hash 校验。
-- 前端展示轮次列表、时间线、事件详情、筛选路径、组合决策、执行/复核、payload diff、symbol history 和复盘备注。
+- API 可查询 cycles、events、payload、payload diff、symbol 历史决策、复盘报告和 hash 校验；cycles/events 支持分页和过滤。
+- 前端是审计工作台：左侧分页轮次导航，中间按标签页查看概览/时间线/策略数据/分析决策/风险执行/diff/备注/完整报告，右侧按需查看事件详情。
 
 ## 统一兼容模板
 
@@ -70,7 +71,10 @@ npm run build
 cd audit-system
 AUDIT_DATA_DIR=../state/audit npm run sample
 AUDIT_DATA_DIR=../state/audit npm run sample:v3
+AUDIT_DATA_DIR=../state/audit AUDIT_LARGE_CYCLES=120 AUDIT_LARGE_EVENTS=80 npm run sample:large
 ```
+
+`sample:large` 只写本地审计数据，不调用交易所、不调用 MCP。可用 `AUDIT_LARGE_CYCLES` 和 `AUDIT_LARGE_EVENTS` 调整压测规模。
 
 ## 启动前端
 
@@ -106,11 +110,38 @@ AUDIT_DATA_DIR=../state/audit npm run audit -- verify <cycle_id>
 AUDIT_DATA_DIR=../state/audit npm run audit -- cycles
 ```
 
+管理冷却窗口（cooldown registry）：
+
+```bash
+# 写入冷却（默认时长按 reason 取：stop=30m / abort=15m / manual_close=15m / external=30m / tp_close=0）
+echo '{"symbol":"HYPE/USDT:USDT","side":"long","reason":"stop","cycleId":"v2-...","notes":"stopped at 58.56"}' \
+  | AUDIT_DATA_DIR=../state/audit npm run audit -- cooldowns set
+
+# 查询是否仍被阻止
+AUDIT_DATA_DIR=../state/audit npm run audit -- cooldowns check HYPE/USDT:USDT long
+# blocked=true 时返回 exit code 2 和 {blocked,remainingSeconds,entry}
+
+# 列出当前活跃冷却（或只看一个 symbol）
+AUDIT_DATA_DIR=../state/audit npm run audit -- cooldowns list
+AUDIT_DATA_DIR=../state/audit npm run audit -- cooldowns list HYPE/USDT:USDT
+
+# 列出全部历史（含 cleared / 过期）
+AUDIT_DATA_DIR=../state/audit npm run audit -- cooldowns all
+
+# 手工清除（可选 side 限制；默认清掉同 symbol 下全部活跃记录）
+AUDIT_DATA_DIR=../state/audit npm run audit -- cooldowns clear HYPE/USDT:USDT long
+```
+
+`cooldowns set` 写入会自动把同 symbol/side 上还在生效的旧记录 supersede 掉；`cooldowns check` 只把未过期且未 cleared 的记录视为阻塞。
+
 ## API
 
 - `GET /api/cycles`
+- `GET /api/cycles?limit=50&cursor=50&q=BTC&status=completed&symbol=BTC`
 - `GET /api/cycles/:cycleId`
 - `GET /api/cycles/:cycleId/events`
+- `GET /api/cycles/:cycleId/events?limit=50&cursor=50&phase=analysis&q=BTC`
+- `GET /api/cycles/:cycleId/overview`
 - `GET /api/cycles/:cycleId/report`
 - `GET /api/cycles/:cycleId/verify`
 - `GET /api/events/:eventId/payload`
@@ -121,3 +152,5 @@ AUDIT_DATA_DIR=../state/audit npm run audit -- cycles
 ## 安全边界
 
 前端和 API 不提供下单、撤单、改单、改杠杆、转账或提现按钮。复盘备注是唯一写接口，只写本地 SQLite/JSONL/blob 审计数据，不触达交易所。
+
+大数据优化不要求重启任何已运行服务。完成代码构建后，只有在你手动执行 `npm start` 或重启现有进程时，新前端才会被正在使用的服务加载。

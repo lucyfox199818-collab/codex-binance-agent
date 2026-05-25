@@ -145,4 +145,269 @@ describe("audit core", () => {
     });
     store.close();
   });
+
+  it("does not mark a planned no-submit action as execution", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+
+    store.appendEvent({
+      cycleId: "cycle-no-submit-plan",
+      type: "cycle.started",
+      phase: "cycle",
+      summary: "cycle started",
+      payload: { ok: true }
+    });
+    store.appendEvent({
+      cycleId: "cycle-no-submit-plan",
+      type: "action.planned",
+      phase: "execution",
+      summary: "final quote drifted beyond limit; no submit",
+      payload: { result: "no-submit" }
+    });
+
+    expect(store.getCycle("cycle-no-submit-plan")?.hasExecution).toBe(false);
+    store.close();
+  });
+
+  it("does not report overview gaps for detailed phase names", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+    const cycleId = "v2-detailed-phase-cycle";
+
+    store.appendEvent({
+      cycleId,
+      type: "cycle.started",
+      phase: "cycle.start",
+      summary: "cycle started",
+      payload: { ok: true }
+    });
+    store.appendEvent({
+      cycleId,
+      type: "mcp.call",
+      phase: "preflight.account_orders_protection",
+      summary: "fetched account, positions, orders and protection state",
+      payload: { calls: [{ tool: "ccxt_fetch_balance", params_summary: {}, return_summary: {}, latency_ms: 10, error: null }] }
+    });
+    store.appendEvent({
+      cycleId,
+      type: "market.snapshot",
+      phase: "market.scan.snapshot",
+      summary: "selected market snapshot",
+      payload: { eligibleMarkets: 10 }
+    });
+    store.appendEvent({
+      cycleId,
+      type: "candidate.ranked",
+      phase: "selection.cross_section_ranking",
+      summary: "candidate ranking completed",
+      payload: { ranked: [] }
+    });
+    store.appendEvent({
+      cycleId,
+      type: "cta.decided",
+      phase: "decision.cta",
+      summary: "CTA decision: no trade",
+      payload: { decision: "no_trade" }
+    });
+    store.appendEvent({
+      cycleId,
+      type: "risk.sized",
+      phase: "decision.risk",
+      summary: "risk decision: zero size",
+      payload: { size: 0 }
+    });
+    store.appendEvent({
+      cycleId,
+      type: "execution.aborted",
+      phase: "execution.no_trade_abort",
+      summary: "explicitly abandoned execution because no setup passed",
+      payload: { mutating_call_submitted: false }
+    });
+    store.appendEvent({
+      cycleId,
+      type: "post.verify",
+      phase: "post_decision.verify",
+      summary: "post-decision verification confirmed flat account",
+      payload: { positions: [], open_orders: [] }
+    });
+    store.appendEvent({
+      cycleId,
+      type: "summary.finalized",
+      phase: "summary.finalized",
+      summary: "cycle finalized",
+      payload: { result: "no_trade" }
+    });
+
+    expect(store.getCycleOverview(cycleId).gaps).toEqual([]);
+    store.close();
+  });
+
+  it("records and clears cooldowns with default and explicit durations", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+
+    const stop = store.setCooldown({
+      symbol: "HYPE/USDT:USDT",
+      side: "long",
+      reason: "stop",
+      cycleId: "v2-cooldown-1",
+      notes: "stopped at 58.56"
+    });
+    expect(stop.untilTs > stop.startedAt).toBe(true);
+    expect(Date.parse(stop.untilTs) - Date.parse(stop.startedAt)).toBe(30 * 60 * 1000);
+
+    expect(store.checkCooldown("HYPE/USDT:USDT", "long")).toMatchObject({
+      blocked: true,
+      remainingSeconds: expect.any(Number)
+    });
+    expect(store.checkCooldown("HYPE/USDT:USDT", "short")).toMatchObject({ blocked: false });
+    expect(store.checkCooldown("OTHER/USDT:USDT", "long")).toMatchObject({ blocked: false });
+
+    const both = store.setCooldown({
+      symbol: "PLUME/USDT:USDT",
+      side: "both",
+      reason: "abort",
+      durationSeconds: 60
+    });
+    expect(both.side).toBe("both");
+    expect(store.checkCooldown("PLUME/USDT:USDT", "long").blocked).toBe(true);
+    expect(store.checkCooldown("PLUME/USDT:USDT", "short").blocked).toBe(true);
+
+    const cleared = store.clearCooldown("HYPE/USDT:USDT", "long");
+    expect(cleared).toBe(1);
+    expect(store.checkCooldown("HYPE/USDT:USDT", "long").blocked).toBe(false);
+
+    store.close();
+  });
+
+  it("supersedes earlier cooldown entries when a new one is set for the same side", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+
+    const first = store.setCooldown({
+      symbol: "NEAR/USDT:USDT",
+      side: "long",
+      reason: "abort",
+      durationSeconds: 30
+    });
+    const second = store.setCooldown({
+      symbol: "NEAR/USDT:USDT",
+      side: "long",
+      reason: "stop",
+      durationSeconds: 120
+    });
+
+    const active = store.listActiveCooldowns("NEAR/USDT:USDT");
+    expect(active).toHaveLength(1);
+    expect(active[0]!.cooldownId).toBe(second.cooldownId);
+
+    const all = store.listAllCooldowns();
+    const previous = all.find((row) => row.cooldownId === first.cooldownId);
+    expect(previous?.clearedAt).toBeTruthy();
+    expect(previous?.clearReason).toBe("superseded_by_new_entry");
+
+    store.close();
+  });
+
+  it("rejects invalid or zero-duration cooldown writes without clearing active entries", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+
+    const stop = store.setCooldown({
+      symbol: "TIA/USDT:USDT",
+      side: "long",
+      reason: "stop",
+      durationSeconds: 120
+    });
+
+    expect(() =>
+      store.setCooldown({
+        symbol: "TIA/USDT:USDT",
+        side: "long",
+        reason: "tp_close" as never
+      })
+    ).toThrow(/Unsupported cooldown reason/);
+    expect(() =>
+      store.setCooldown({
+        symbol: "TIA/USDT:USDT",
+        side: "long",
+        reason: "stop",
+        durationSeconds: 0
+      })
+    ).toThrow(/Cooldown duration must be positive/);
+
+    const active = store.listActiveCooldowns("TIA/USDT:USDT");
+    expect(active).toHaveLength(1);
+    expect(active[0]!.cooldownId).toBe(stop.cooldownId);
+    expect(store.checkCooldown("TIA/USDT:USDT", "long").blocked).toBe(true);
+
+    store.close();
+  });
+
+  it("does not clear a both-side cooldown from a side-specific clear", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+
+    store.setCooldown({
+      symbol: "PLUME/USDT:USDT",
+      side: "both",
+      reason: "external",
+      durationSeconds: 300
+    });
+
+    expect(store.clearCooldown("PLUME/USDT:USDT", "long")).toBe(0);
+    expect(store.checkCooldown("PLUME/USDT:USDT", "long").blocked).toBe(true);
+    expect(store.checkCooldown("PLUME/USDT:USDT", "short").blocked).toBe(true);
+
+    expect(store.clearCooldown("PLUME/USDT:USDT", "both")).toBe(1);
+    expect(store.checkCooldown("PLUME/USDT:USDT", "long").blocked).toBe(false);
+    expect(store.checkCooldown("PLUME/USDT:USDT", "short").blocked).toBe(false);
+
+    store.close();
+  });
+
+  it("persists manual-clear provenance on cleared cooldown entries", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+
+    const cooldown = store.setCooldown({
+      symbol: "WIF/USDT:USDT",
+      side: "short",
+      reason: "abort",
+      durationSeconds: 300
+    });
+
+    expect(
+      store.clearCooldown("WIF/USDT:USDT", "short", {
+        cycleId: "v2-clear-1",
+        notes: "15m/1h formed a new structure with a new invalidation level"
+      })
+    ).toBe(1);
+
+    const cleared = store.listAllCooldowns().find((entry) => entry.cooldownId === cooldown.cooldownId);
+    expect(cleared).toMatchObject({
+      clearReason: "manual_clear",
+      clearCycleId: "v2-clear-1",
+      clearNotes: "15m/1h formed a new structure with a new invalidation level"
+    });
+
+    store.close();
+  });
+
+  it("treats expired cooldowns as not blocking even before manual clear", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+
+    const past = new Date(Date.now() - 60 * 1000).toISOString();
+    store.setCooldown({
+      symbol: "LIT/USDT:USDT",
+      side: "long",
+      reason: "stop",
+      durationSeconds: 30,
+      startedAt: past
+    });
+
+    expect(store.checkCooldown("LIT/USDT:USDT", "long")).toMatchObject({ blocked: false });
+    store.close();
+  });
 });
