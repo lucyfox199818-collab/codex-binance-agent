@@ -9,6 +9,7 @@
 - 订单交易：普通下单/批量下单、查询订单、查询全部订单、编辑订单、撤单、批量撤单、全部撤单。
 - 条件单和衍生品交易：trigger、stop loss、take profit、stop order、stop limit、stop market、trailing、post-only、reduce-only、TP/SL 组合单。
 - 合约/资金费率：funding rate/history、open interest/history、mark price、mark/index/premium index OHLCV。
+- Binance USDT-M 公共衍生品情绪数据：open-interest history、global long/short、top trader account/position long/short、taker buy/sell volume，均为只读免费公开数据端点。
 - 账户变更：set leverage、margin mode、position mode、add/reduce/set margin、transfer、withdraw，全部走交易开关和 dry-run 保护。
 - 通用能力：`ccxt_call` 可以调用当前交易所实例上存在的任意 CCXT 方法，包含 unified API 和 exchange-specific implicit API。
 - 代理/IP：支持 `TRADINGAGENTS_PROXY_URL` 或 `CCXT_PROXY_URL`，并提供 `ccxt_proxy_ip` 检查当前出口 IP 是否命中配置的白名单 IP。
@@ -75,7 +76,7 @@ Docker MCP stdio 配置示例：
 
 ## 工具列表
 
-当前显式注册 94 个 MCP tools；此外 `ccxt_call` 可以调用当前交易所实例上存在的任意 CCXT 方法。
+当前显式注册 100 个 MCP tools；此外 `ccxt_call` 可以调用当前交易所实例上存在的任意 CCXT 方法。
 
 基础和市场数据：
 
@@ -181,6 +182,12 @@ CCXT 当前不支持的 `createOrderWithTakeProfitAndStopLoss`。
 - `ccxt_fetch_open_interest`
 - `ccxt_fetch_open_interests`
 - `ccxt_fetch_open_interest_history`
+- `ccxt_fetch_binance_derivatives_sentiment`
+- `ccxt_fetch_binance_global_long_short_account_ratio`
+- `ccxt_fetch_binance_top_long_short_account_ratio`
+- `ccxt_fetch_binance_top_long_short_position_ratio`
+- `ccxt_fetch_binance_taker_long_short_ratio`
+- `ccxt_fetch_binance_open_interest_hist`
 - `ccxt_fetch_mark_price`
 - `ccxt_fetch_mark_prices`
 - `ccxt_fetch_mark_ohlcv`

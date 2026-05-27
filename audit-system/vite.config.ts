@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   root: ".",
@@ -9,5 +9,8 @@ export default defineConfig({
   },
   server: {
     port: 5177
+  },
+  test: {
+    testTimeout: 30_000
   }
 });

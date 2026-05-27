@@ -30,6 +30,9 @@ const codesSchema = z.array(z.string()).optional();
 const codeSchema = z.string().min(1);
 const idSchema = z.string().min(1);
 const algoIdSchema = z.string().min(1);
+const binanceDerivativesPeriodSchema = z
+  .enum(["5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"])
+  .optional();
 const sideSchema = z.enum(["buy", "sell"]);
 const amountSchema = z.number().positive();
 const priceSchema = z.number().positive().optional();
@@ -278,6 +281,85 @@ export const toolDefinitions: CcxtToolDefinition[] = [
       ...orderCoreSchema,
       stopLoss: z.number().positive(),
       takeProfit: z.number().positive()
+    }
+  },
+  {
+    name: "ccxt_fetch_binance_derivatives_sentiment",
+    title: "Fetch Binance Futures Sentiment",
+    description:
+      "Fetch free Binance futures data endpoints for open-interest history, global/top long-short ratios, and taker buy/sell volume.",
+    inputSchema: {
+      symbol: z.string().min(1),
+      period: binanceDerivativesPeriodSchema,
+      limit: z.number().int().positive().max(500).optional(),
+      startTime: sinceSchema,
+      endTime: sinceSchema,
+      params: paramsSchema
+    }
+  },
+  {
+    name: "ccxt_fetch_binance_global_long_short_account_ratio",
+    title: "Fetch Binance Global Long Short Ratio",
+    description: "Call Binance futures fapiDataGetGlobalLongShortAccountRatio(params).",
+    inputSchema: {
+      symbol: z.string().min(1),
+      period: binanceDerivativesPeriodSchema,
+      limit: z.number().int().positive().max(500).optional(),
+      startTime: sinceSchema,
+      endTime: sinceSchema,
+      params: paramsSchema
+    }
+  },
+  {
+    name: "ccxt_fetch_binance_top_long_short_account_ratio",
+    title: "Fetch Binance Top Trader Account Ratio",
+    description: "Call Binance futures fapiDataGetTopLongShortAccountRatio(params).",
+    inputSchema: {
+      symbol: z.string().min(1),
+      period: binanceDerivativesPeriodSchema,
+      limit: z.number().int().positive().max(500).optional(),
+      startTime: sinceSchema,
+      endTime: sinceSchema,
+      params: paramsSchema
+    }
+  },
+  {
+    name: "ccxt_fetch_binance_top_long_short_position_ratio",
+    title: "Fetch Binance Top Trader Position Ratio",
+    description: "Call Binance futures fapiDataGetTopLongShortPositionRatio(params).",
+    inputSchema: {
+      symbol: z.string().min(1),
+      period: binanceDerivativesPeriodSchema,
+      limit: z.number().int().positive().max(500).optional(),
+      startTime: sinceSchema,
+      endTime: sinceSchema,
+      params: paramsSchema
+    }
+  },
+  {
+    name: "ccxt_fetch_binance_taker_long_short_ratio",
+    title: "Fetch Binance Taker Buy Sell Volume",
+    description: "Call Binance futures fapiDataGetTakerlongshortRatio(params).",
+    inputSchema: {
+      symbol: z.string().min(1),
+      period: binanceDerivativesPeriodSchema,
+      limit: z.number().int().positive().max(500).optional(),
+      startTime: sinceSchema,
+      endTime: sinceSchema,
+      params: paramsSchema
+    }
+  },
+  {
+    name: "ccxt_fetch_binance_open_interest_hist",
+    title: "Fetch Binance Open Interest History",
+    description: "Call Binance futures fapiDataGetOpenInterestHist(params).",
+    inputSchema: {
+      symbol: z.string().min(1),
+      period: binanceDerivativesPeriodSchema,
+      limit: z.number().int().positive().max(500).optional(),
+      startTime: sinceSchema,
+      endTime: sinceSchema,
+      params: paramsSchema
     }
   }
 ];
@@ -1230,7 +1312,81 @@ function normalizeBinanceFuturesSymbol(symbol: string | undefined): string | und
   }
 
   const [baseAndQuote] = symbol.split(":");
-  return baseAndQuote.replace("/", "");
+  return baseAndQuote.replace("/", "").toUpperCase();
+}
+
+function buildBinanceDerivativesDataParams(args: JsonRecord | undefined): JsonRecord {
+  const params = cleanParams(args?.params);
+  const rawSymbol = optionalString(args, "symbol") ?? (typeof params.symbol === "string" ? params.symbol : undefined);
+  const symbol = normalizeBinanceFuturesSymbol(rawSymbol);
+  if (!symbol) {
+    throw new Error("Binance futures derivatives data requires a symbol.");
+  }
+
+  const request: JsonRecord = {
+    ...params,
+    symbol,
+    period: optionalString(args, "period") ?? (typeof params.period === "string" ? params.period : "15m")
+  };
+  const limit = optionalNumber(args, "limit");
+  const startTime = optionalNumber(args, "startTime");
+  const endTime = optionalNumber(args, "endTime");
+  if (limit !== undefined) {
+    request.limit = limit;
+  }
+  if (startTime !== undefined) {
+    request.startTime = startTime;
+  }
+  if (endTime !== undefined) {
+    request.endTime = endTime;
+  }
+  return request;
+}
+
+const binanceDerivativesDataMethods = {
+  openInterestHist: "fapiDataGetOpenInterestHist",
+  globalLongShortAccountRatio: "fapiDataGetGlobalLongShortAccountRatio",
+  topLongShortAccountRatio: "fapiDataGetTopLongShortAccountRatio",
+  topLongShortPositionRatio: "fapiDataGetTopLongShortPositionRatio",
+  takerLongShortRatio: "fapiDataGetTakerlongshortRatio"
+} as const;
+
+type BinanceDerivativesDataKey = keyof typeof binanceDerivativesDataMethods;
+
+async function fetchBinanceDerivativesData(
+  exchange: ExchangeLike,
+  key: BinanceDerivativesDataKey,
+  args: JsonRecord | undefined
+): Promise<unknown> {
+  const params = buildBinanceDerivativesDataParams(args);
+  return await invoke(exchange, binanceDerivativesDataMethods[key], [params]);
+}
+
+async function buildBinanceDerivativesSentiment(exchange: ExchangeLike, args: JsonRecord | undefined): Promise<JsonRecord> {
+  const params = buildBinanceDerivativesDataParams(args);
+  const entries = await Promise.all(
+    Object.entries(binanceDerivativesDataMethods).map(async ([key, method]) => {
+      try {
+        return [key, { ok: true, method, data: await invoke(exchange, method, [params]) }] as const;
+      } catch (error) {
+        return [
+          key,
+          {
+            ok: false,
+            method,
+            error: error instanceof Error ? error.message : String(error)
+          }
+        ] as const;
+      }
+    })
+  );
+
+  return {
+    source: "binance-futures-public-data",
+    freeOnly: true,
+    params,
+    datasets: Object.fromEntries(entries)
+  };
 }
 
 function buildBinanceOpenAlgoOrdersParams(args: JsonRecord | undefined): JsonRecord {
@@ -1891,6 +2047,24 @@ export function createToolHandlers(config: CcxtMcpConfig, exchangeProvider: Exch
 
     ccxt_create_protected_futures_entry: async (args) =>
       withExchange((exchange) => createBinanceProtectedFuturesEntry(config, exchange, args)),
+
+    ccxt_fetch_binance_derivatives_sentiment: async (args) =>
+      withExchange((exchange) => buildBinanceDerivativesSentiment(exchange, args)),
+
+    ccxt_fetch_binance_global_long_short_account_ratio: async (args) =>
+      withExchange((exchange) => fetchBinanceDerivativesData(exchange, "globalLongShortAccountRatio", args)),
+
+    ccxt_fetch_binance_top_long_short_account_ratio: async (args) =>
+      withExchange((exchange) => fetchBinanceDerivativesData(exchange, "topLongShortAccountRatio", args)),
+
+    ccxt_fetch_binance_top_long_short_position_ratio: async (args) =>
+      withExchange((exchange) => fetchBinanceDerivativesData(exchange, "topLongShortPositionRatio", args)),
+
+    ccxt_fetch_binance_taker_long_short_ratio: async (args) =>
+      withExchange((exchange) => fetchBinanceDerivativesData(exchange, "takerLongShortRatio", args)),
+
+    ccxt_fetch_binance_open_interest_hist: async (args) =>
+      withExchange((exchange) => fetchBinanceDerivativesData(exchange, "openInterestHist", args)),
 
     ccxt_call: async (args) => {
       const method = String(args?.method ?? "");

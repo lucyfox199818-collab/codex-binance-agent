@@ -35,6 +35,11 @@ function createFakeExchange() {
     fapiPrivatePostAlgoOrder: vi.fn().mockResolvedValue({ algoId: "algo-1", algoStatus: "NEW" }),
     fapiPrivateDeleteAlgoOrder: vi.fn().mockResolvedValue({ algoId: "algo-1", algoStatus: "CANCELED" }),
     fapiPrivateDeleteAlgoOpenOrders: vi.fn().mockResolvedValue({ code: "200", msg: "done" }),
+    fapiDataGetOpenInterestHist: vi.fn().mockResolvedValue([{ sumOpenInterest: "100" }]),
+    fapiDataGetGlobalLongShortAccountRatio: vi.fn().mockResolvedValue([{ longShortRatio: "1.2" }]),
+    fapiDataGetTopLongShortAccountRatio: vi.fn().mockResolvedValue([{ longShortRatio: "1.4" }]),
+    fapiDataGetTopLongShortPositionRatio: vi.fn().mockResolvedValue([{ longShortRatio: "1.6" }]),
+    fapiDataGetTakerlongshortRatio: vi.fn().mockResolvedValue([{ buySellRatio: "0.8" }]),
     transfer: vi.fn().mockResolvedValue({ id: "transfer-1" }),
     createOrder: vi.fn().mockResolvedValue({ id: "order-1" }),
     fetch: vi.fn().mockResolvedValue({ ip: "203.0.113.1" }),
@@ -60,6 +65,12 @@ describe("createToolHandlers", () => {
       "ccxt_cancel_algo_order",
       "ccxt_cancel_all_algo_orders",
       "ccxt_fetch_ticker_summary",
+      "ccxt_fetch_binance_derivatives_sentiment",
+      "ccxt_fetch_binance_global_long_short_account_ratio",
+      "ccxt_fetch_binance_top_long_short_account_ratio",
+      "ccxt_fetch_binance_top_long_short_position_ratio",
+      "ccxt_fetch_binance_taker_long_short_ratio",
+      "ccxt_fetch_binance_open_interest_hist",
       "ccxt_create_trigger_order",
       "ccxt_create_stop_loss_order",
       "ccxt_create_take_profit_order",
@@ -166,6 +177,40 @@ describe("createToolHandlers", () => {
       symbol: "BANANAS31USDT",
       algoType: "CONDITIONAL"
     });
+  });
+
+  it("fetches free Binance futures derivatives sentiment endpoints", async () => {
+    const exchange = { ...createFakeExchange(), id: "binance" };
+    const handlers = createToolHandlers(config, () => exchange);
+
+    const result = await handlers.ccxt_fetch_binance_derivatives_sentiment({
+      symbol: "BTC/USDT:USDT",
+      period: "15m",
+      limit: 30
+    });
+
+    expect(result).toMatchObject({
+      source: "binance-futures-public-data",
+      freeOnly: true,
+      params: {
+        symbol: "BTCUSDT",
+        period: "15m",
+        limit: 30
+      },
+      datasets: {
+        openInterestHist: { ok: true },
+        globalLongShortAccountRatio: { ok: true },
+        topLongShortAccountRatio: { ok: true },
+        topLongShortPositionRatio: { ok: true },
+        takerLongShortRatio: { ok: true }
+      }
+    });
+    expect(exchange.fapiDataGetOpenInterestHist).toHaveBeenCalledWith({
+      symbol: "BTCUSDT",
+      period: "15m",
+      limit: 30
+    });
+    expect(exchange.createOrder).not.toHaveBeenCalled();
   });
 
   it("cancels a Binance futures algo order through the explicit algo API", async () => {

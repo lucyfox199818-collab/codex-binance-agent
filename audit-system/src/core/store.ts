@@ -89,6 +89,9 @@ const DEFAULT_COOLDOWN_SECONDS: Record<CooldownReason, number> = {
   external: 30 * 60
 };
 
+const SQLITE_BUSY_TIMEOUT_MS = 10_000;
+const SQLITE_WRITE_RETRIES = 4;
+
 interface NoteRow {
   note_id: string;
   cycle_id: string;
@@ -116,6 +119,8 @@ export class AuditStore {
     mkdirSync(this.blobsDir, { recursive: true });
     this.db = new DatabaseSync(this.dbPath);
     this.db.exec("PRAGMA journal_mode = WAL;");
+    this.db.exec("PRAGMA synchronous = NORMAL;");
+    this.db.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.ensureSchema();
   }
@@ -125,31 +130,34 @@ export class AuditStore {
     const payload = redactSecrets(input.payload ?? {});
     const payloadHash = hashPayload(payload);
     const payloadRef = this.writePayloadBlob(payloadHash, payload);
-    const previous = this.getLastEvent(input.cycleId);
-    const sequence = previous ? previous.sequence + 1 : 1;
     const eventId = randomUUID();
-    const baseRecord: Omit<AuditEventRecord, "eventHash"> = {
-      eventId,
-      cycleId: input.cycleId,
-      sequence,
-      timestamp,
-      type: input.type,
-      phase: input.phase,
-      summary: input.summary,
-      severity: input.severity ?? "info",
-      symbol: input.symbol,
-      parentEventId: input.parentEventId,
-      tags: input.tags ?? [],
-      payloadHash,
-      payloadRef,
-      previousHash: previous?.eventHash
-    };
-    const eventHash = computeEventHash(baseRecord);
-    const record: AuditEventRecord = { ...baseRecord, eventHash };
 
-    this.insertEvent(record);
+    const record = this.withWriteTransaction(() => {
+      const previous = this.getLastEvent(input.cycleId);
+      const sequence = previous ? previous.sequence + 1 : 1;
+      const baseRecord: Omit<AuditEventRecord, "eventHash"> = {
+        eventId,
+        cycleId: input.cycleId,
+        sequence,
+        timestamp,
+        type: input.type,
+        phase: input.phase,
+        summary: input.summary,
+        severity: input.severity ?? "info",
+        symbol: input.symbol,
+        parentEventId: input.parentEventId,
+        tags: input.tags ?? [],
+        payloadHash,
+        payloadRef,
+        previousHash: previous?.eventHash
+      };
+      const eventHash = computeEventHash(baseRecord);
+      const record: AuditEventRecord = { ...baseRecord, eventHash };
+      this.insertEvent(record);
+      this.upsertCycle(record);
+      return record;
+    });
     this.appendJsonl(record);
-    this.upsertCycle(record);
     return record;
   }
 
@@ -224,12 +232,14 @@ export class AuditStore {
       body,
       tags: options.tags ?? []
     };
-    this.db
-      .prepare(
-        `INSERT INTO review_notes (note_id, cycle_id, timestamp, author, body, tags_json)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      )
-      .run(note.noteId, note.cycleId, note.timestamp, note.author, note.body, JSON.stringify(note.tags));
+    this.withWriteTransaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO review_notes (note_id, cycle_id, timestamp, author, body, tags_json)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(note.noteId, note.cycleId, note.timestamp, note.author, note.body, JSON.stringify(note.tags));
+    });
     this.appendEvent({
       cycleId,
       type: "review.note",
@@ -436,31 +446,33 @@ export class AuditStore {
     const startedAt = input.startedAt ?? new Date().toISOString();
     const untilTs = new Date(Date.parse(startedAt) + durationSeconds * 1000).toISOString();
     const cooldownId = randomUUID();
-    // Supersede any active record for the same symbol/side
-    this.db
-      .prepare(
-        `UPDATE cooldowns
-         SET cleared_at = ?, clear_reason = COALESCE(clear_reason, ?)
-         WHERE symbol = ? AND (side = ? OR side = 'both' OR ? = 'both')
-           AND cleared_at IS NULL`
-      )
-      .run(startedAt, "superseded_by_new_entry", input.symbol, input.side, input.side);
-    this.db
-      .prepare(
-        `INSERT INTO cooldowns
-         (cooldown_id, symbol, side, reason, started_at, until_ts, cycle_id, notes, cleared_at, clear_reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`
-      )
-      .run(
-        cooldownId,
-        input.symbol,
-        input.side,
-        reason,
-        startedAt,
-        untilTs,
-        input.cycleId ?? null,
-        input.notes ?? null
-      );
+    this.withWriteTransaction(() => {
+      // Supersede any active record for the same symbol/side.
+      this.db
+        .prepare(
+          `UPDATE cooldowns
+           SET cleared_at = ?, clear_reason = COALESCE(clear_reason, ?)
+           WHERE symbol = ? AND (side = ? OR side = 'both' OR ? = 'both')
+             AND cleared_at IS NULL`
+        )
+        .run(startedAt, "superseded_by_new_entry", input.symbol, input.side, input.side);
+      this.db
+        .prepare(
+          `INSERT INTO cooldowns
+           (cooldown_id, symbol, side, reason, started_at, until_ts, cycle_id, notes, cleared_at, clear_reason)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`
+        )
+        .run(
+          cooldownId,
+          input.symbol,
+          input.side,
+          reason,
+          startedAt,
+          untilTs,
+          input.cycleId ?? null,
+          input.notes ?? null
+        );
+    });
     return {
       cooldownId,
       symbol: input.symbol,
@@ -486,13 +498,15 @@ export class AuditStore {
     if (side) {
       params.push(side);
     }
-    const result = this.db
-      .prepare(
-        `UPDATE cooldowns
-         SET cleared_at = ?, clear_reason = ?, clear_cycle_id = ?, clear_notes = ?
-         WHERE symbol = ? ${sideClause} AND cleared_at IS NULL`
-      )
-      .run(...params);
+    const result = this.withWriteTransaction(() =>
+      this.db
+        .prepare(
+          `UPDATE cooldowns
+           SET cleared_at = ?, clear_reason = ?, clear_cycle_id = ?, clear_notes = ?
+           WHERE symbol = ? ${sideClause} AND cleared_at IS NULL`
+        )
+        .run(...params)
+    );
     return Number(result.changes);
   }
 
@@ -543,74 +557,76 @@ export class AuditStore {
   }
 
   private ensureSchema(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS cycles (
-        cycle_id TEXT PRIMARY KEY,
-        started_at TEXT NOT NULL,
-        ended_at TEXT,
-        status TEXT NOT NULL,
-        event_count INTEGER NOT NULL,
-        first_event_hash TEXT,
-        last_event_hash TEXT,
-        symbols_json TEXT NOT NULL,
-        has_execution INTEGER NOT NULL,
-        summary TEXT
-      );
+    this.withWriteTransaction(() => {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS cycles (
+          cycle_id TEXT PRIMARY KEY,
+          started_at TEXT NOT NULL,
+          ended_at TEXT,
+          status TEXT NOT NULL,
+          event_count INTEGER NOT NULL,
+          first_event_hash TEXT,
+          last_event_hash TEXT,
+          symbols_json TEXT NOT NULL,
+          has_execution INTEGER NOT NULL,
+          summary TEXT
+        );
 
-      CREATE TABLE IF NOT EXISTS events (
-        event_id TEXT PRIMARY KEY,
-        cycle_id TEXT NOT NULL,
-        sequence INTEGER NOT NULL,
-        timestamp TEXT NOT NULL,
-        type TEXT NOT NULL,
-        phase TEXT NOT NULL,
-        summary TEXT NOT NULL,
-        severity TEXT NOT NULL,
-        symbol TEXT,
-        parent_event_id TEXT,
-        tags_json TEXT NOT NULL,
-        payload_hash TEXT NOT NULL,
-        payload_ref TEXT NOT NULL,
-        previous_hash TEXT,
-        event_hash TEXT NOT NULL,
-        FOREIGN KEY (cycle_id) REFERENCES cycles(cycle_id)
-      );
+        CREATE TABLE IF NOT EXISTS events (
+          event_id TEXT PRIMARY KEY,
+          cycle_id TEXT NOT NULL,
+          sequence INTEGER NOT NULL,
+          timestamp TEXT NOT NULL,
+          type TEXT NOT NULL,
+          phase TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          severity TEXT NOT NULL,
+          symbol TEXT,
+          parent_event_id TEXT,
+          tags_json TEXT NOT NULL,
+          payload_hash TEXT NOT NULL,
+          payload_ref TEXT NOT NULL,
+          previous_hash TEXT,
+          event_hash TEXT NOT NULL,
+          FOREIGN KEY (cycle_id) REFERENCES cycles(cycle_id)
+        );
 
-      CREATE INDEX IF NOT EXISTS idx_events_cycle_sequence ON events(cycle_id, sequence);
-      CREATE INDEX IF NOT EXISTS idx_events_symbol ON events(symbol);
-      CREATE INDEX IF NOT EXISTS idx_events_cycle_phase_sequence ON events(cycle_id, phase, sequence);
-      CREATE INDEX IF NOT EXISTS idx_cycles_started_at ON cycles(started_at);
-      CREATE INDEX IF NOT EXISTS idx_cycles_status_started_at ON cycles(status, started_at);
+        CREATE INDEX IF NOT EXISTS idx_events_cycle_sequence ON events(cycle_id, sequence);
+        CREATE INDEX IF NOT EXISTS idx_events_symbol ON events(symbol);
+        CREATE INDEX IF NOT EXISTS idx_events_cycle_phase_sequence ON events(cycle_id, phase, sequence);
+        CREATE INDEX IF NOT EXISTS idx_cycles_started_at ON cycles(started_at);
+        CREATE INDEX IF NOT EXISTS idx_cycles_status_started_at ON cycles(status, started_at);
 
-      CREATE TABLE IF NOT EXISTS review_notes (
-        note_id TEXT PRIMARY KEY,
-        cycle_id TEXT NOT NULL,
-        timestamp TEXT NOT NULL,
-        author TEXT NOT NULL,
-        body TEXT NOT NULL,
-        tags_json TEXT NOT NULL,
-        FOREIGN KEY (cycle_id) REFERENCES cycles(cycle_id)
-      );
+        CREATE TABLE IF NOT EXISTS review_notes (
+          note_id TEXT PRIMARY KEY,
+          cycle_id TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          author TEXT NOT NULL,
+          body TEXT NOT NULL,
+          tags_json TEXT NOT NULL,
+          FOREIGN KEY (cycle_id) REFERENCES cycles(cycle_id)
+        );
 
-      CREATE TABLE IF NOT EXISTS cooldowns (
-        cooldown_id TEXT PRIMARY KEY,
-        symbol TEXT NOT NULL,
-        side TEXT NOT NULL,
-        reason TEXT NOT NULL,
-        started_at TEXT NOT NULL,
-        until_ts TEXT NOT NULL,
-        cycle_id TEXT,
-        notes TEXT,
-        cleared_at TEXT,
-        clear_reason TEXT,
-        clear_cycle_id TEXT,
-        clear_notes TEXT
-      );
+        CREATE TABLE IF NOT EXISTS cooldowns (
+          cooldown_id TEXT PRIMARY KEY,
+          symbol TEXT NOT NULL,
+          side TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          until_ts TEXT NOT NULL,
+          cycle_id TEXT,
+          notes TEXT,
+          cleared_at TEXT,
+          clear_reason TEXT,
+          clear_cycle_id TEXT,
+          clear_notes TEXT
+        );
 
-      CREATE INDEX IF NOT EXISTS idx_cooldowns_symbol_active
-        ON cooldowns(symbol, cleared_at, until_ts);
-    `);
-    this.ensureCooldownColumns();
+        CREATE INDEX IF NOT EXISTS idx_cooldowns_symbol_active
+          ON cooldowns(symbol, cleared_at, until_ts);
+      `);
+      this.ensureCooldownColumns();
+    });
   }
 
   private ensureCooldownColumns(): void {
@@ -712,6 +728,42 @@ export class AuditStore {
       .get(cycleId) as EventRow | undefined;
     return row ? eventFromRow(row) : undefined;
   }
+
+  private withWriteTransaction<T>(operation: () => T): T {
+    return withSqliteBusyRetry(() => {
+      this.db.exec("BEGIN IMMEDIATE;");
+      try {
+        const result = operation();
+        this.db.exec("COMMIT;");
+        return result;
+      } catch (error) {
+        this.db.exec("ROLLBACK;");
+        throw error;
+      }
+    });
+  }
+}
+
+function withSqliteBusyRetry<T>(operation: () => T): T {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= SQLITE_WRITE_RETRIES; attempt += 1) {
+    try {
+      return operation();
+    } catch (error) {
+      lastError = error;
+      if (!isSqliteBusyError(error) || attempt === SQLITE_WRITE_RETRIES) {
+        throw error;
+      }
+    }
+  }
+  throw lastError;
+}
+
+function isSqliteBusyError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return /\b(SQLITE_BUSY|SQLITE_LOCKED|database is locked|database table is locked)\b/i.test(error.message);
 }
 
 function eventFromRow(row: EventRow): AuditEventRecord {

@@ -4,6 +4,9 @@
   "type": "module",
   "private": true,
   "description": "Local audit recorder and UI for trading cycles.",
+  "bin": {
+    "trading-intel-mcp": "./dist/mcp/index.js"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -15,13 +18,17 @@
     "sample": "tsx src/cli/record-sample.ts",
     "sample:v3": "tsx src/cli/record-v3-sample.ts",
     "sample:large": "tsx src/cli/record-large-sample.ts",
-    "audit": "tsx src/cli/audit-cli.ts"
+    "audit": "tsx src/cli/audit-cli.ts",
+    "mcp": "node dist/mcp/index.js",
+    "mcp:dev": "tsx src/mcp/index.ts"
   },
   "engines": {
     "node": ">=22.13.0"
   },
   "dependencies": {
-    "vite": "^7.3.3"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "vite": "^7.3.3",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",

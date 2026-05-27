@@ -23,15 +23,31 @@ V2 实盘循环默认每 60 秒运行一次。如果某个可选来源需要付�
 
 允许的免费可选覆盖：
 
+- 本地 `trading-intel-mcp` 审计分析工具：`audit_analyze_cycles`、`audit_analyze_trading_decisions`、`audit_get_cycle_digest`。它只读本地审计数据，可用于复盘、候选降频、no-trade 诊断、执行质量退化和 cooldown 效果分析；不得把历史统计直接当作当前行情事实。
+- `ccxt-mcp` Binance futures 公共衍生品情绪工具：`ccxt_fetch_binance_derivatives_sentiment`、global/top long-short、taker buy/sell、open-interest history。它们是只读免费 Binance public data 端点，用于补充同向拥挤、OI 变化和 taker flow 背景。
 - CoinGecko public MCP：market cap、categories、trending coins、metadata、更广泛市场背景和 sector heat。使用缓存结果，除非 V2 seed list 需要，否则不要每 60 秒调用。
+- DefiLlama public MCP/API：protocol TVL、stablecoins、fees/revenue、yield pools、current prices 和 protocol fundamentals。只使用 `trading-intel-mcp` 暴露的 public 工具；不得使用 Pro endpoint、API key 或 OAuth。
 - 公共无 key 新闻或协议风险数据，但前提是已经配置了验证为免费的 MCP/REST 来源。
 
 通用 web search、browser search、Reuters/CoinDesk headline lookup 或临时新闻浏览不是已配置的可选覆盖。不得在 V2 实盘决策轮次中使用。如果相关新闻或协议风险背景无法通过已配置免费来源获得，记录 `optionalDataMissing` 或 `freeOnlySkipped`，并按 V2 边界继续。
 
+## 免费可选 MCP 触发条件
+
+这些触发条件是 V2 实盘轮次中的取数纪律，不改变 `V2.txt` 的策略阈值。满足触发时才查询对应来源；不满足时不为了“补资料”拖慢 60 秒轮次。
+
+| 来源 | 什么时候用 | 查询范围 | 如何影响决策 |
+| --- | --- | --- | --- |
+| `audit_analyze_cycles` / `audit_analyze_trading_decisions` | 连续多轮 no-trade、同一 symbol/side 反复被拒、刚发生 stop/abort/manual_close、最近执行质量恶化、或用户要求复盘时 | 最近 100-500 轮；必要时限定 symbol | 只用于发现重复拒绝、执行退化、cooldown 效果和下一轮重点；不得把历史统计当当前行情 |
+| `audit_get_cycle_digest` | 需要复核上一轮、某笔执行、某个 cooldown 来源或审计链路时 | 指定 cycle_id | 只用于复盘和纠错；不得替代当前轮账户/行情读取 |
+| `ccxt_fetch_binance_derivatives_sentiment` 或拆分工具 | V2 seed candidate、已有持仓、BTC/ETH beta 冲击评估、OI 与价格背离、资金费/拥挤风险明显、准备真实新增风险前 | BTC/ETH、当前持仓、shortlisted candidates；默认 15m/1h，limit 按工具上限内取 | 可下调、否决或要求等待；不得把未通过 CTA 的候选升级成交易 |
+| `coingecko_search` / `coingecko_markets` / `coingecko_trending` | seed list 含非主流币、新币、板块轮动币、market-cap 质量不明、trending/crowding 可能影响滑点或尾段风险时 | BTC/ETH 背景、seed candidates、相关 category；缓存 5-15 分钟 | 可标注低质量、市值过小、板块拥挤或趋势背景；不得作为唯一入场理由 |
+| `defillama_protocols` / `defillama_protocol` | seed candidate 是 DeFi 协议币、LST/LRT、DEX、lending、perp DEX、bridge、oracle、stablecoin 相关项目，或协议基本面/TVL 风险可能解释异常波动时 | 只查候选相关 protocol slug；缓存 15-60 分钟 | 可因 TVL 崩塌、协议风险、基本面弱或数据缺失而下调/否决；不得升级交易 |
+| `defillama_stablecoins` | 市场出现稳定币脱锚、链上流动性风险、稳定币/支付板块候选、或 BTC/ETH 背景需要稳定币供给确认时 | 全局 stablecoin snapshot；缓存 15-60 分钟 | 只作为宏观/流动性背景和风险提示 |
+| `defillama_fees_overview` / `defillama_yields_pools` | 候选是协议收入、DEX、lending、yield、restaking 或真实使用量对行情影响较大的项目时 | 协议或板块相关数据，避免全量大 payload 频繁读取 | 可下调/否决基本面不支持的候选 |
+
 只用于研究或排除在 60 秒实盘循环外：
 
 - Dune MCP：可用于链上流、DEX 活动、whale wallets、smart-money 查询、dashboard 和可复用 SQL 分析，但自动/API 用法可能需要额度或付费路径，因此实盘循环中跳过。
-- DefiLlama：可用于 TVL、stablecoins、protocol fundamentals、fees/revenue、bridges、hacks、treasury 和 protocol risk context。只使用验证为公开/免费的端点；不得在实盘循环中使用付费 Pro endpoints 或未认证 OAuth MCP。
 - CryptoPanic：只有已配置免费官方 MCP/REST 集成时，才可用于新闻和黑天鹅过滤。不得在实盘循环中使用付费新闻 API。
 - Santiment / Sentiment MCP：social volume、social dominance、trending words、crowding 和 topic momentum 有用，但跳过付费或订阅门槛指标。
 
@@ -90,6 +106,7 @@ V2 实盘循环默认每 60 秒运行一次。如果某个可选来源需要付�
 - `ccxt-mcp` market metadata：跨轮缓存，并在 listings、contract status、precision、limits 或 symbol availability 可能变化时刷新。
 - V2 的 eligible pool、long Top 5、short Top 5、exclusions、ranked candidates 和 CTA decisions 每轮都从当前必需数据重新计算。不得缓存上一轮结论作为本轮依据。
 - CoinGecko public MCP：优先使用 5-15 分钟内刷新的数据；可跨轮缓存。
+- DefiLlama public MCP/API：protocol detail、fees、yields、stablecoins 和 prices 优先使用 15-60 分钟内刷新的数据；重大异常行情或协议风险复核时可以当前轮刷新。
 - 免费公共研究数据：只作为 nearline context；缓存数据可以使用，但必须报告 timestamp，且不得作为唯一实盘执行理由。
 
 ## 数据台账字段

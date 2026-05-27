@@ -21,9 +21,9 @@ Codex 的推理角色不可委派。Codex 必须亲自根据当前 MCP 返回数
 
 术语区分：本 skill 中"后台 runner"、"持久自主 runner"指程序或进程；`TP1/runner`、`runner 管理`指 `V2.txt` 定义的 TP1 后剩余仓位管理。两者不得混用。
 
-## 跨轮持久状态：cooldown 注册表
+## 跨轮状态：cooldown 注册表和审计学习快照
 
-cooldown 注册表是 V2 的唯一跨轮持久状态。skill 操作 cooldown 必须通过 `audit-system` CLI（不直接读写 SQLite）：
+cooldown 注册表是 V2 的唯一强制交易 cooldown 状态。skill 操作 cooldown 必须通过 `audit-system` CLI（不直接读写 SQLite）：
 
 | 命令 | 用途 | 失败处理 |
 | --- | --- | --- |
@@ -44,6 +44,10 @@ cooldown 写入由 skill 在以下事件发生时强制触发：
 
 升级时长由 skill 在写入前查询历史 cooldown（`audit cooldowns all`）后判定，并把判定理由写入 cooldown.notes。
 
+审计学习快照是 V2 的非交易 cooldown 跨轮软状态。它只能来自本地审计系统的只读统计，例如 `trading-intel-mcp` 的 `audit_analyze_cycles`、`audit_analyze_trading_decisions`、`audit_get_cycle_digest`，或等价的本地 `audit` 只读输出。学习快照不得直接授权或禁止交易，只能交给 Codex 调整 seed 覆盖、候选优先级、被动计划、执行方式和仓位折扣。硬风控、cooldown、保护同步、经济 R、资金费窗口、三段保护梯和账户 preflight 不得被学习快照放宽。
+
+每轮读取学习快照失败时，必须写 `strategy.learning_snapshot`，payload 标记 `learning_snapshot_unavailable` 和失败原因；本轮继续按保守默认规则运行，但不得声称完成自学习。
+
 ## 强制每轮顺序
 
 每一轮必须严格按以下顺序执行。不得跳过后续阶段；如果前置阶段被阻塞，也要继续输出最终总结并记录阻塞原因。每轮开始时生成 `cycle_id`，并优先通过 `audit-system` 写入本地审计事件；审计写入失败不替代交易风控判断，但必须在最终总结中报告缺口。
@@ -54,21 +58,23 @@ cooldown 写入由 skill 在以下事件发生时强制触发：
 2. 如有需要，发现/加载 `ccxt-mcp` 工具。
 3. 生成本轮 `cycle_id`，写入 `cycle.started` 审计事件。
 4. **cooldown 复核**：调用 `audit cooldowns list` 获取活跃 cooldown，写入 `cooldown.reviewed` 审计事件（payload 含 active 列表）。CLI 失败时写 `cooldown.unavailable`，本轮禁止新建仓。
-5. 通过 `ccxt-mcp` 读取账户、持仓、合约普通未成交委托、条件单和保护单，并把工具名、参数摘要、返回摘要、耗时、错误和 payload hash 写入 `mcp.call` 审计事件。
-6. 完成持仓/订单/保护单对账：持仓事实只能来自 `positions` 和 balance positions；条件单、algo 单、TP/SL 或 reduce-only 保护单不得反向证明持仓存在。若无对应持仓但存在条件/保护单，必须标记为孤立保护单。
-7. 先管理已有持仓：验证保护单、识别漂移，并在考虑新开仓前按 V2 规则处理退出或调整。
-8. 通过 `ccxt-mcp` 扫描配置好的 CCXT 合约市场池，优先使用批量和增量调用；把宽市场摘要写入 `market.snapshot`。
-9. 基于当前轮 MCP 数据完成 V2 要求的市场分析；必须区分市场报告榜单和可执行 seed list。long/short Top 5、24h 涨跌幅榜和极端标的只用于截面报告，不得直接等同于 CTA 候选池；可执行 seed list 必须按 `V2.txt` 的结构位置、二段机会、止损清晰度、目标空间、周期职责、BTC/ETH beta 暴露和成本可执行性筛出，并对 cooldown blocked 的 symbol/side 直接降级为观察。把排名、排除项和 seed list 写入 `candidate.ranked` / `candidate.filtered`。对被拒候选必须写标准化拒绝原因；同一 `symbol+side` 连续重复拒绝时，按 `V2.txt §四.1` 记录候选降频状态、剩余跳过轮数和重新激活条件，但不得把候选降频当作真实交易 cooldown。
-10. 对每个排序候选做 V2 交易确认；CTA 阶段必须再做一次 `audit cooldowns check`，blocked=true 的候选只能记为观察。把每个候选的确认结果写入 `cta.decided`，payload 必须包含标准化拒绝原因、是否触发候选降频、是否出现新的 15m 已收盘结构事件，以及需要后续统计的 `rejected_candidate_outcome` 基准字段（拒绝时价格、拒绝原因、后续 MFE/MAE 待更新标记）。
-11. 对每个可交易候选执行风控和仓位计算；强制校验经济 R 下限（1R ≥ max(成本 3 倍, 0.25 USDT)）、资金费窗口、止损噪声距离、复盘观察期 1%-5% 自动风险上限和重入半风险约束；把每个候选的仓位、风险收益、成本覆盖、`expected_funding_pnl_usdt`、`economic_r_check`、`noise_stop_gate`、`account_state`、账户模式/positionSide preflight 状态和剔除原因写入 `risk.sized`。
-12. 如果当前持仓数低于 `V2.txt` 定义的最大持仓上限，按 V2 允许的方式执行符合 cooldown、仓位、风险、成本、盘口和保护边界的新币种，直到候选用完或账户达到持仓上限。不得开重复净方向。
-13. 只有在候选通过 `V2.txt` 的 cooldown、仓位、风险、成本、盘口、执行质量、止损噪声距离、beta 集中风险、账户模式 preflight 和保护边界，且真实交易明确启用时，才通过 `ccxt-mcp` 提交入场、退出、撤改或保护动作。提交前写 `execution.planned`（含 protection 策略：`protected_futures_entry` vs `manual_protection_sequence`，后者必须包含 `manual_protection_sequence_reason`，并包含交易所/账户模式/positionSide/leverage/margin/precision/min-order preflight、3 秒内重取盘口时间、计划价到可成交价漂移 R、实际风险相对计划风险倍数、实际 RR、止损噪声门禁）；dry-run 写 `order.dry_run`，真实提交响应写 `order.submitted`。任何真实 create/cancel/edit/close/set-leverage 等 mutating MCP 调用都必须先有同一 `cycle_id` 下的计划事件，调用返回后必须立即写入真实响应事件。
-14. 保护移动、TP1、runner 管理或孤立单清理前，必须先确认持仓、最近成交和保护状态没有因为 TP/SL 触发而变化；同时必须先写 `protection.precheck` 审计事件（payload 含 `current_R_progress`、`current_stage`、`new_sl_distance_atr15m_multiple`、`min_required_R_progress`、`net_be_price`、`new_sl_net_expected_pnl_usdt`、`gate_result`），precheck 不通过则禁止提交 mutating MCP 调用。
-15. 对真实入场和主动退出做成交后执行质量复核：写入实际成交均价、成交漂移、滑点/点差/冲击成本占 R、成交后实际 1R、实际 RR、实际成本覆盖、实际最大亏损 USDT 和权益占比。若触发 `slippage_risk_abort`，先按 V2 平掉新增风险并清理孤立保护，再进入 cooldown 写入。
-16. **cooldown 写入**：本轮发生 stop、manual_close、受保护入场 abort 或 `slippage_risk_abort` 后，立即在 `post.verify` 之前调用 `audit cooldowns set` 写入对应记录；CLI 返回的 cooldownId 必须写入 `cooldown.written` 审计事件。stop 后必须分类 `structure_invalidated` 或 `noise_stop_candidate`；后者还要写 `reentry_watch` 条件和止损后 15m/30m 后验统计待更新字段。
-17. 重新读取执行结果、持仓、合约普通未成交委托和 TP/SL 状态，并写入 `post.verify`。孤立保护单取消返回 unknown/order not found 时，必须重读 positions、普通 open orders 和 open algo orders 后判定是否为 `benign_cleanup_unknown_order`。
-18. 输出强制最终每轮总结，写入 `summary.finalized` 审计事件。无论是不交易、阻塞、dry-run、错误、超时、用户暂停还是用户中断轮次，只要当前会话仍可继续写入审计，都必须输出；中断总结应标记为 `interrupted` 或 `paused`，并说明未完成阶段和真实执行状态。总结必须包含候选降频、拒绝候选后验统计更新状态、执行质量降频/market entry 限制状态，以及下一轮优先验证的策略学习项。若连续 15 轮或 30 分钟无新开仓，必须追加 `no_trade_diagnostic`，但只能扩大机会发现和被动限价计划，不得放宽 V2 硬风控。
-19. 在 `summary.finalized` 之后等待按配置间隔进入下一轮。**不再运行 verify-v2 语义门禁**；hash chain 校验由 `audit verify <cycle_id>` 按需进行（不阻塞下一轮）。
+5. **学习快照**：读取最近审计学习快照，写入 `strategy.learning_snapshot`。快照至少尝试覆盖最近 50 轮、最近 20 笔可审计策略交易、no-trade 主因、CTA/risk/execution 阻塞原因、被拒候选后验、setup_bucket 表现和执行质量。样本不足时标记 `sample_insufficient=true`。
+6. 通过 `ccxt-mcp` 读取账户、持仓、合约普通未成交委托、条件单和保护单，并把工具名、参数摘要、返回摘要、耗时、错误和 payload hash 写入 `mcp.call` 审计事件。
+7. 完成持仓/订单/保护单对账：持仓事实只能来自 `positions` 和 balance positions；条件单、algo 单、TP/SL 或 reduce-only 保护单不得反向证明持仓存在。若无对应持仓但存在条件/保护单，必须标记为孤立保护单。
+8. 先管理已有持仓：验证保护单、识别漂移，并在考虑新开仓前按 V2 规则处理退出或调整。
+9. 通过 `ccxt-mcp` 扫描配置好的 CCXT 合约市场池，优先使用批量和增量调用；把宽市场摘要写入 `market.snapshot`。
+10. 基于当前轮 MCP 数据和学习快照完成 V2 要求的市场分析；必须区分市场报告榜单和可执行 seed list。long/short Top 5、24h 涨跌幅榜和极端标的只用于截面报告，不得直接等同于 CTA 候选池；可执行 seed list 必须按 `V2.txt` 的结构位置、二段机会、止损清晰度、目标空间、周期职责、BTC/ETH beta 暴露和成本可执行性筛出，并对 cooldown blocked 的 symbol/side 直接降级为观察。把排名、排除项和 seed list 写入 `candidate.ranked` / `candidate.filtered`。对被拒候选必须写标准化拒绝原因；同一 `symbol+side` 连续重复拒绝时，按 `V2.txt §四.1` 记录候选降频状态、剩余跳过轮数和重新激活条件，但不得把候选降频当作真实交易 cooldown。
+11. 对每个排序候选做 V2 交易确认；CTA 阶段必须再做一次 `audit cooldowns check`，blocked=true 的候选只能记为观察。把每个候选的确认结果写入 `cta.decided`，payload 必须包含 `setup_bucket`、`hard_block` / `soft_wait` / `report_only` 分类、标准化拒绝原因、是否触发候选降频、是否出现新的 15m 已收盘结构事件，以及需要后续统计的 `rejected_candidate_outcome` 基准字段（拒绝时价格、拒绝原因、后续 MFE/MAE 待更新标记）。
+12. 对每个可交易候选执行风控和仓位计算；强制校验经济 R 下限（1R ≥ max(成本 3 倍, 0.25 USDT)）、资金费窗口、止损噪声距离、复盘观察期 1%-5% 自动风险上限和重入半风险约束；把每个候选的仓位、风险收益、成本覆盖、`expected_funding_pnl_usdt`、`economic_r_check`、`noise_stop_gate`、`account_state`、账户模式/positionSide preflight 状态、学习快照导致的软仓位折扣和剔除原因写入 `risk.sized`。
+13. 写入 `strategy.learning_applied`，说明本轮采用的 seed 覆盖调整、被动计划、执行方式限制、候选降频/解除、仓位折扣，以及哪些硬门禁未被改变。
+14. 如果当前持仓数低于 `V2.txt` 定义的最大持仓上限，按 V2 允许的方式执行符合 cooldown、仓位、风险、成本、盘口和保护边界的新币种，直到候选用完或账户达到持仓上限。不得开重复净方向。
+15. 只有在候选通过 `V2.txt` 的 cooldown、仓位、风险、成本、盘口、执行质量、止损噪声距离、beta 集中风险、账户模式 preflight 和保护边界，且真实交易明确启用时，才通过 `ccxt-mcp` 提交入场、退出、撤改或保护动作。提交前写 `execution.planned`（含 protection 策略：`protected_futures_entry` vs `manual_protection_sequence`，后者必须包含 `manual_protection_sequence_reason`，并包含交易所/账户模式/positionSide/leverage/margin/precision/min-order preflight、3 秒内重取盘口时间、计划价到可成交价漂移 R、实际风险相对计划风险倍数、实际 RR、止损噪声门禁）；dry-run 写 `order.dry_run`，真实提交响应写 `order.submitted`。任何真实 create/cancel/edit/close/set-leverage 等 mutating MCP 调用都必须先有同一 `cycle_id` 下的计划事件，调用返回后必须立即写入真实响应事件。
+16. 保护移动、TP1、runner 管理或孤立单清理前，必须先确认持仓、最近成交和保护状态没有因为 TP/SL 触发而变化；同时必须先写 `protection.precheck` 审计事件（payload 含 `current_R_progress`、`current_stage`、`new_sl_distance_atr15m_multiple`、`min_required_R_progress`、`net_be_price`、`new_sl_net_expected_pnl_usdt`、`gate_result`），precheck 不通过则禁止提交 mutating MCP 调用。
+17. 对真实入场和主动退出做成交后执行质量复核：写入实际成交均价、成交漂移、滑点/点差/冲击成本占 R、成交后实际 1R、实际 RR、实际成本覆盖、实际最大亏损 USDT 和权益占比。若触发 `slippage_risk_abort`，先按 V2 平掉新增风险并清理孤立保护，再进入 cooldown 写入。
+18. **cooldown 写入**：本轮发生 stop、manual_close、受保护入场 abort 或 `slippage_risk_abort` 后，立即在 `post.verify` 之前调用 `audit cooldowns set` 写入对应记录；CLI 返回的 cooldownId 必须写入 `cooldown.written` 审计事件。stop 后必须分类 `structure_invalidated` 或 `noise_stop_candidate`；后者还要写 `reentry_watch` 条件和止损后 15m/30m 后验统计待更新字段。
+19. 重新读取执行结果、持仓、合约普通未成交委托和 TP/SL 状态，并写入 `post.verify`。孤立保护单取消返回 unknown/order not found 时，必须重读 positions、普通 open orders 和 open algo orders 后判定是否为 `benign_cleanup_unknown_order`。
+20. 输出强制最终每轮总结，写入 `summary.finalized` 审计事件。无论是不交易、阻塞、dry-run、错误、超时、用户暂停还是用户中断轮次，只要当前会话仍可继续写入审计，都必须输出；中断总结应标记为 `interrupted` 或 `paused`，并说明未完成阶段和真实执行状态。总结必须包含学习快照和软调整、候选降频、拒绝候选后验统计更新状态、执行质量降频/market entry 限制状态，以及下一轮优先验证的策略学习项。若连续 15 轮或 30 分钟无新开仓，必须追加 `no_trade_diagnostic`，但只能扩大机会发现和被动限价计划，不得放宽 V2 硬风控。
+21. 在 `summary.finalized` 之后等待按配置间隔进入下一轮。**不再运行 verify-v2 语义门禁**；hash chain 校验由 `audit verify <cycle_id>` 按需进行（不阻塞下一轮）。
 
 ## MCP 数据流
 
@@ -76,7 +82,7 @@ cooldown 写入由 skill 在以下事件发生时强制触发：
 
 1. `ccxt-mcp` 账户状态：config、balance、positions、margin/leverage、交易所返回的 PnL 字段、合约普通未成交委托、已关闭/已取消订单，以及交易所暴露的条件/保护单。
 2. `ccxt-mcp` 行情数据：exchange markets、24h tickers、买一卖一或 order book、funding/mark、open interest 和 candles。
-3. 可选免费外部 MCP 覆盖：可用且相关时，可用 CoinGecko public 或其他无付费计划来源。
+3. 可选免费外部 MCP 覆盖：可用且触发 `references/mcp-data-policy.md` 条件时，可用本地 `trading-intel-mcp` 审计分析、CoinGecko public、DefiLlama public，以及 `ccxt-mcp` Binance futures 公共衍生品情绪工具。
 4. Codex 推理：根据 `V2.txt` 推导具体市场解释、交易/不交易判断、仓位、保护/退出方案和策略报告字段。
 5. `ccxt-mcp` 执行：只有 V2 明确允许时，才下单、平仓、改单、撤单或修改合约订单。Binance USDT-M 受保护入场必须优先使用 `ccxt_create_protected_futures_entry`（见 §工具纪律）。
 6. 再次读取 `ccxt-mcp` 账户状态：复核动作后的账户、持仓、订单和保护状态。

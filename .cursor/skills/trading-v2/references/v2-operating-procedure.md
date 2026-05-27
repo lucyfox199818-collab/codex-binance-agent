@@ -29,7 +29,7 @@
 - `audit verify <cycle_id>`：按需做 hash chain 校验（不阻塞下一轮）。
 - `audit cooldowns list / check / set / clear / all`：cooldown 注册表读写。skill 强制使用这套命令；不允许直接 SQLite 写入。
 
-可选外部 MCP 覆盖由 `mcp-data-policy.md` 管理。除非 `V2.txt` 明确要求，否则它们不是实盘执行的必需能力。
+可选外部 MCP 覆盖由 `mcp-data-policy.md` 管理，且只在该文件的触发条件满足后查询。除非 `V2.txt` 明确要求，否则它们不是实盘执行的必需能力。
 
 不要在实盘轮次里用 web search 或 browser lookup 满足可选背景好奇心。缺失的可选背景只记录在数据台账中；它不得在账户、订单、保护和必需行情预检前触发通用网页/新闻搜索。
 

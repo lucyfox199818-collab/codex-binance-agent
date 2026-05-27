@@ -93,6 +93,17 @@ describe("audit core", () => {
     store.close();
   });
 
+  it("configures SQLite for concurrent audit readers and writers", async () => {
+    const dataDir = await tempAuditDir();
+    const store = new AuditStore({ dataDir });
+    const db = (store as unknown as { db: DatabaseSync }).db;
+    const journalMode = db.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
+    const busyTimeout = db.prepare("PRAGMA busy_timeout").get() as { timeout: number };
+    expect(journalMode.journal_mode.toLowerCase()).toBe("wal");
+    expect(busyTimeout.timeout).toBeGreaterThanOrEqual(10_000);
+    store.close();
+  });
+
   it("verifies the per-cycle hash chain and detects tampering", async () => {
     const dataDir = await tempAuditDir();
     const store = new AuditStore({ dataDir });

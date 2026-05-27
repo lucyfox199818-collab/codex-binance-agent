@@ -8,6 +8,7 @@
 - 每条事件包含 payload hash、previous hash 和 event hash，支持单轮 hash chain 校验。
 - 持久 cooldown 注册表：保存 symbol/side 级别的入场冷却（止损、abort、主动平仓、外部停止），供策略侧在新入场前查询和写入。
 - CLI 可从 JSON stdin 写入事件，方便未来策略轮次逐阶段落盘。
+- 只读 `trading-intel-mcp`：把本地审计数据聚合为 cycle/decision/risk/execution 统计，并提供 CoinGecko 与 DefiLlama 公共免费市场背景工具。
 - API 可查询 cycles、events、payload、payload diff、symbol 历史决策、复盘报告和 hash 校验；cycles/events 支持分页和过滤。
 - 前端是审计工作台：左侧分页轮次导航，中间按标签页查看概览/时间线/策略数据/分析决策/风险执行/diff/备注/完整报告，右侧按需查看事件详情。
 
@@ -133,6 +134,50 @@ AUDIT_DATA_DIR=../state/audit npm run audit -- cooldowns clear HYPE/USDT:USDT lo
 ```
 
 `cooldowns set` 写入会自动把同 symbol/side 上还在生效的旧记录 supersede 掉；`cooldowns check` 只把未过期且未 cleared 的记录视为阻塞。
+
+## 只读 MCP
+
+构建后启动本地智能数据 MCP：
+
+```bash
+cd audit-system
+npm run build:server
+AUDIT_DATA_DIR=../state/audit npm run mcp
+```
+
+Codex MCP stdio 配置示例：
+
+```json
+{
+  "mcpServers": {
+    "trading-intel": {
+      "command": "node",
+      "args": ["/home/codex-binance-agent/audit-system/dist/mcp/index.js"],
+      "cwd": "/home/codex-binance-agent/audit-system",
+      "env": {
+        "AUDIT_DATA_DIR": "/home/codex-binance-agent/state/audit"
+      }
+    }
+  }
+}
+```
+
+工具：
+
+- `audit_analyze_cycles`：只读聚合本地 cycle、event、phase、type、symbol 和执行率。
+- `audit_analyze_trading_decisions`：只读聚合 CTA、risk gate、execution skip 和 execution event。
+- `audit_get_cycle_digest`：只读返回单轮摘要和可选 final summary payload。
+- `coingecko_search`：CoinGecko public search。
+- `coingecko_trending`：CoinGecko public trending。
+- `coingecko_markets`：CoinGecko public market-cap/category/sector context。
+- `defillama_protocols`：DefiLlama public protocol TVL metadata。
+- `defillama_protocol`：DefiLlama public protocol detail and historical TVL by slug。
+- `defillama_stablecoins`：DefiLlama public stablecoin supply context。
+- `defillama_yields_pools`：DefiLlama public yield pools，默认可用 `limit` 截断返回。
+- `defillama_fees_overview`：DefiLlama public fees/revenue overview。
+- `defillama_prices_current`：DefiLlama public current token prices，例如 `coingecko:ethereum`。
+
+这些工具不下单、不撤单、不改仓、不读取或发送交易所密钥。CoinGecko 默认走免费 public endpoint；如设置 `COINGECKO_DEMO_API_KEY` 只用于官方 demo key 额度，不启用付费 Pro-only endpoint。DefiLlama 只接 public API base URLs，不接 Pro endpoint、不需要 API key。
 
 ## API
 
