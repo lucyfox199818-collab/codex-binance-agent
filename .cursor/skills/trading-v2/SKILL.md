@@ -30,11 +30,12 @@ cooldown 注册表是 V2 的唯一跨轮持久状态。skill 操作 cooldown 必
 | `audit cooldowns list` | 拉取所有未过期未 cleared 的 cooldown | 失败即视为 cooldown 不可用，进入"只管理已有仓位"模式 |
 | `audit cooldowns check <symbol> <long\|short>` | 候选预检；exit code 2 表示 blocked | blocked=true 时本轮拒绝该 symbol/side 新入场 |
 | `audit cooldowns set` | stop / abort / manual_close 后强制写入 | 写入失败时把 cooldown 缺口写进 summary 并阻止后续同 symbol 新入场 |
-| `audit cooldowns clear <symbol> [side]` | AI 主动早期解除（manual_clear） | 仅当满足 `V2.txt §四.3` 全部条件才允许 |
+| `audit cooldowns clear <symbol> [side]` | AI 主动早期解除（manual_clear） | 仅当满足 `V2.txt §四.3` 噪声止损 re-entry watch 或 `V2.txt §四.4` 普通早期解除全部条件才允许 |
 
 cooldown 写入由 skill 在以下事件发生时强制触发：
 
 - 持仓被 SL 成交（不论被动 trigger 还是 migrated SL 触发）：`reason=stop`，默认 30 分钟。
+- 噪声止损候选仍写 `reason=stop`，但 cooldown notes 必须包含 `reentry_watch=true`、`stop_classification=noise_stop_candidate`、止损后观察窗口、原始失效位和重入触发条件；普通 stop 不得提前解除。
 - 受保护入场任何阶段 abort（SL/TP 已挂但 entry 未成交）：`reason=abort`，默认 15 分钟。
 - 主动平仓（非 TP1 成交）：`reason=manual_close`，默认 15 分钟。
 - 同 symbol/side 4h 内累计 ≥ 2 次 stop：`reason=stop`、`notes=repeat_stop_within_4h`，时长 60 分钟。
@@ -57,16 +58,17 @@ cooldown 写入由 skill 在以下事件发生时强制触发：
 6. 完成持仓/订单/保护单对账：持仓事实只能来自 `positions` 和 balance positions；条件单、algo 单、TP/SL 或 reduce-only 保护单不得反向证明持仓存在。若无对应持仓但存在条件/保护单，必须标记为孤立保护单。
 7. 先管理已有持仓：验证保护单、识别漂移，并在考虑新开仓前按 V2 规则处理退出或调整。
 8. 通过 `ccxt-mcp` 扫描配置好的 CCXT 合约市场池，优先使用批量和增量调用；把宽市场摘要写入 `market.snapshot`。
-9. 基于当前轮 MCP 数据完成 V2 要求的市场分析；必须区分市场报告榜单和可执行 seed list。long/short Top 5、24h 涨跌幅榜和极端标的只用于截面报告，不得直接等同于 CTA 候选池；可执行 seed list 必须按 `V2.txt` 的结构位置、二段机会、止损清晰度、目标空间、周期职责、BTC/ETH beta 暴露和成本可执行性筛出，并对 cooldown blocked 的 symbol/side 直接降级为观察。把排名、排除项和 seed list 写入 `candidate.ranked` / `candidate.filtered`。
-10. 对每个排序候选做 V2 交易确认；CTA 阶段必须再做一次 `audit cooldowns check`，blocked=true 的候选只能记为观察。把每个候选的确认结果写入 `cta.decided`。
-11. 对每个可交易候选执行风控和仓位计算；强制校验经济 R 下限（1R ≥ max(成本 3 倍, 0.25 USDT)）和资金费窗口；把每个候选的仓位、风险收益、成本覆盖、`expected_funding_pnl_usdt`、`economic_r_check`、`account_state` 和剔除原因写入 `risk.sized`。
+9. 基于当前轮 MCP 数据完成 V2 要求的市场分析；必须区分市场报告榜单和可执行 seed list。long/short Top 5、24h 涨跌幅榜和极端标的只用于截面报告，不得直接等同于 CTA 候选池；可执行 seed list 必须按 `V2.txt` 的结构位置、二段机会、止损清晰度、目标空间、周期职责、BTC/ETH beta 暴露和成本可执行性筛出，并对 cooldown blocked 的 symbol/side 直接降级为观察。把排名、排除项和 seed list 写入 `candidate.ranked` / `candidate.filtered`。对被拒候选必须写标准化拒绝原因；同一 `symbol+side` 连续重复拒绝时，按 `V2.txt §四.1` 记录候选降频状态、剩余跳过轮数和重新激活条件，但不得把候选降频当作真实交易 cooldown。
+10. 对每个排序候选做 V2 交易确认；CTA 阶段必须再做一次 `audit cooldowns check`，blocked=true 的候选只能记为观察。把每个候选的确认结果写入 `cta.decided`，payload 必须包含标准化拒绝原因、是否触发候选降频、是否出现新的 15m 已收盘结构事件，以及需要后续统计的 `rejected_candidate_outcome` 基准字段（拒绝时价格、拒绝原因、后续 MFE/MAE 待更新标记）。
+11. 对每个可交易候选执行风控和仓位计算；强制校验经济 R 下限（1R ≥ max(成本 3 倍, 0.25 USDT)）、资金费窗口、止损噪声距离、复盘观察期 1%-5% 自动风险上限和重入半风险约束；把每个候选的仓位、风险收益、成本覆盖、`expected_funding_pnl_usdt`、`economic_r_check`、`noise_stop_gate`、`account_state`、账户模式/positionSide preflight 状态和剔除原因写入 `risk.sized`。
 12. 如果当前持仓数低于 `V2.txt` 定义的最大持仓上限，按 V2 允许的方式执行符合 cooldown、仓位、风险、成本、盘口和保护边界的新币种，直到候选用完或账户达到持仓上限。不得开重复净方向。
-13. 只有在候选通过 `V2.txt` 的 cooldown、仓位、风险、成本、盘口、执行质量、beta 集中风险和保护边界，且真实交易明确启用时，才通过 `ccxt-mcp` 提交入场、退出、撤改或保护动作。提交前写 `execution.planned`（含 protection 策略：`protected_futures_entry` vs `manual_protection_sequence`，后者必须包含 `manual_protection_sequence_reason`）；dry-run 写 `order.dry_run`，真实提交响应写 `order.submitted`。任何真实 create/cancel/edit/close/set-leverage 等 mutating MCP 调用都必须先有同一 `cycle_id` 下的计划事件，调用返回后必须立即写入真实响应事件。
+13. 只有在候选通过 `V2.txt` 的 cooldown、仓位、风险、成本、盘口、执行质量、止损噪声距离、beta 集中风险、账户模式 preflight 和保护边界，且真实交易明确启用时，才通过 `ccxt-mcp` 提交入场、退出、撤改或保护动作。提交前写 `execution.planned`（含 protection 策略：`protected_futures_entry` vs `manual_protection_sequence`，后者必须包含 `manual_protection_sequence_reason`，并包含交易所/账户模式/positionSide/leverage/margin/precision/min-order preflight、3 秒内重取盘口时间、计划价到可成交价漂移 R、实际风险相对计划风险倍数、实际 RR、止损噪声门禁）；dry-run 写 `order.dry_run`，真实提交响应写 `order.submitted`。任何真实 create/cancel/edit/close/set-leverage 等 mutating MCP 调用都必须先有同一 `cycle_id` 下的计划事件，调用返回后必须立即写入真实响应事件。
 14. 保护移动、TP1、runner 管理或孤立单清理前，必须先确认持仓、最近成交和保护状态没有因为 TP/SL 触发而变化；同时必须先写 `protection.precheck` 审计事件（payload 含 `current_R_progress`、`current_stage`、`new_sl_distance_atr15m_multiple`、`min_required_R_progress`、`net_be_price`、`new_sl_net_expected_pnl_usdt`、`gate_result`），precheck 不通过则禁止提交 mutating MCP 调用。
-15. **cooldown 写入**：本轮发生 stop、manual_close 或 abort 后，立即在 `post.verify` 之前调用 `audit cooldowns set` 写入对应记录；CLI 返回的 cooldownId 必须写入 `cooldown.written` 审计事件。
-16. 重新读取执行结果、持仓、合约普通未成交委托和 TP/SL 状态，并写入 `post.verify`。
-17. 输出强制最终每轮总结，写入 `summary.finalized` 审计事件。无论是不交易、阻塞、dry-run、错误、超时、用户暂停还是用户中断轮次，只要当前会话仍可继续写入审计，都必须输出；中断总结应标记为 `interrupted` 或 `paused`，并说明未完成阶段和真实执行状态。
-18. 在 `summary.finalized` 之后等待按配置间隔进入下一轮。**不再运行 verify-v2 语义门禁**；hash chain 校验由 `audit verify <cycle_id>` 按需进行（不阻塞下一轮）。
+15. 对真实入场和主动退出做成交后执行质量复核：写入实际成交均价、成交漂移、滑点/点差/冲击成本占 R、成交后实际 1R、实际 RR、实际成本覆盖、实际最大亏损 USDT 和权益占比。若触发 `slippage_risk_abort`，先按 V2 平掉新增风险并清理孤立保护，再进入 cooldown 写入。
+16. **cooldown 写入**：本轮发生 stop、manual_close、受保护入场 abort 或 `slippage_risk_abort` 后，立即在 `post.verify` 之前调用 `audit cooldowns set` 写入对应记录；CLI 返回的 cooldownId 必须写入 `cooldown.written` 审计事件。stop 后必须分类 `structure_invalidated` 或 `noise_stop_candidate`；后者还要写 `reentry_watch` 条件和止损后 15m/30m 后验统计待更新字段。
+17. 重新读取执行结果、持仓、合约普通未成交委托和 TP/SL 状态，并写入 `post.verify`。孤立保护单取消返回 unknown/order not found 时，必须重读 positions、普通 open orders 和 open algo orders 后判定是否为 `benign_cleanup_unknown_order`。
+18. 输出强制最终每轮总结，写入 `summary.finalized` 审计事件。无论是不交易、阻塞、dry-run、错误、超时、用户暂停还是用户中断轮次，只要当前会话仍可继续写入审计，都必须输出；中断总结应标记为 `interrupted` 或 `paused`，并说明未完成阶段和真实执行状态。总结必须包含候选降频、拒绝候选后验统计更新状态、执行质量降频/market entry 限制状态，以及下一轮优先验证的策略学习项。若连续 15 轮或 30 分钟无新开仓，必须追加 `no_trade_diagnostic`，但只能扩大机会发现和被动限价计划，不得放宽 V2 硬风控。
+19. 在 `summary.finalized` 之后等待按配置间隔进入下一轮。**不再运行 verify-v2 语义门禁**；hash chain 校验由 `audit verify <cycle_id>` 按需进行（不阻塞下一轮）。
 
 ## MCP 数据流
 
@@ -105,9 +107,9 @@ V2 实盘决策轮次中，不得调用 web search、browser search 或通用网
 
 任何手动序列必须在 `execution.planned` payload 注明 `manual_protection_sequence_reason`；abort 时必须按 cooldown 写入 `reason=abort`。
 
-真实执行审计必须保持实时性：提交 mutating MCP 调用前，先写 `execution.planned` 或 `action.planned`，payload 必须包含具体工具、symbol、side、amount、price/trigger、positionSide、reduceOnly、final order book 时间、计划价、允许漂移、净保本/经济 R 相关计算。调用返回后立即写 `order.submitted`、`action.executed` 或 `action.remediated`，payload 必须包含交易所 orderId/algoId、avgPrice、executedQty、createTime/updateTime/triggerTime、错误码、撤销结果和本地写入时间。若因中断、网络或工具故障只能事后补录，事件和最终总结必须明确标记 `reconstructed`，写明真实交易所时间与本地补录时间。
+真实执行审计必须保持实时性：提交 mutating MCP 调用前，先写 `execution.planned` 或 `action.planned`，payload 必须包含具体工具、symbol、side、amount、price/trigger、positionSide、reduceOnly、final order book 时间、计划价、允许漂移、净保本/经济 R 相关计算，以及账户模式/positionSide/leverage/margin/precision/min-order preflight。调用返回后立即写 `order.submitted`、`action.executed` 或 `action.remediated`，payload 必须包含交易所 orderId/algoId、avgPrice、executedQty、createTime/updateTime/triggerTime、错误码、撤销结果、本地写入时间和成交后风险复核字段。若因中断、网络或工具故障只能事后补录，事件和最终总结必须明确标记 `reconstructed`，写明真实交易所时间与本地补录时间。
 
-真实入场、主动退出、保护移动和 TP1/runner 管理必须携带执行质量字段：1h regime、15m 结构、5m 触发、1m/盘口用途、BTC/ETH beta 暴露、同向 beta 组风险、决策价、最终 bid/ask、final order book 时间、提交时间、允许漂移、预估滑点/点差/冲击成本占 R。若 final order book 到提交超过 3 秒、成交漂移超过 V2 门槛、或同向 beta 组风险不合格，必须停止新增执行或切换为 V2 允许的限价/边界执行。
+真实入场、主动退出、保护移动和 TP1/runner 管理必须携带执行质量字段：1h regime、15m 结构、5m 触发、1m/盘口用途、BTC/ETH beta 暴露、同向 beta 组风险、决策价、最终 bid/ask、final order book 时间、提交时间、允许漂移、预估滑点/点差/冲击成本占 R、实际风险相对计划风险倍数、实际 RR、止损噪声距离。若 final order book 到提交超过 3 秒、成交漂移超过 V2 门槛、计划价到可成交价漂移超过 0.25R、实际风险超过计划风险 1.25 倍、实际 RR 跌破 1.5、止损噪声门禁失败、或同向 beta 组风险不合格，必须停止新增执行或切换为 V2 允许的限价/边界执行。最近 3 笔真实执行中有 2 笔满足 V2 定义的执行质量恶化条件时，后续 5 轮停止新增 market entry，只允许限价/IOC/边界执行或只管理已有仓位，并在 summary 写明恢复条件。
 
 Binance USDT-M 分层退出执行纪律：`closePosition=true` 是 Close-All，只能用于关闭全部当前剩余仓位，不得用于 TP1 或任何部分止盈。TP1 必须是指定数量的 reduce-only 退出；优先使用普通 reduce-only limit，只有当前工具和交易所返回明确支持 quantity-based 条件 TP 且 V2 计划写明数量、用途和互斥关系时，才允许使用数量化 `TAKE_PROFIT_MARKET`。runner 剩余仓位必须在每次 TP1/SL 成交后重新读取真实数量再设置保护。
 
@@ -129,7 +131,8 @@ Binance USDT-M 分层退出执行纪律：`closePosition=true` 是 Close-All，�
 | --- | --- | --- | --- |
 | 早期 | `< 0.5` | 继续原 SL/TP；净值为正的部分减仓 | 任何全仓 SL 向入场方向移动（含保本）、贴现价 trailing |
 | 中段 | `0.5 ≤ < 1.0`（TP1 前） | 移到 5m/15m 噪声外结构位，新 SL 距现价 ≥ 1.5 × ATR(15m,14) | 贴现价、贴入场价、ATR 1.5 倍以内 |
-| TP1 后 runner | `≥ 1.0` 或 TP1 部分成交后 | 5m/15m 结构、前高/前低、跟踪止盈 | 1m/最新价机械追踪、closePosition=true 做部分退出 |
+| TP1 前高利润 | `≥ 1.0` 但 TP1 未成交 | 只能在新的已收盘 15m 结构外、且新 SL 距现价 ≥ 1.5 × ATR(15m,14) 时移动；优先执行 TP1 | 仅因达到 1R 就把全仓 SL 抬到净保本附近；把 SL 放进普通噪声带 |
+| TP1 后 runner | TP1 部分成交后 | 5m/15m 结构、前高/前低、跟踪止盈 | 1m/最新价机械追踪、closePosition=true 做部分退出 |
 
 precheck payload 必填字段：`current_R_progress`、`current_stage`、`new_sl_distance_atr15m_multiple`、`min_required_R_progress`、`net_be_price`、`new_sl_net_expected_pnl_usdt`、`gate_result`（`pass` / `block_early_stage` / `block_atr_too_tight` / `block_net_negative`）。
 
@@ -167,4 +170,5 @@ UTC 00:00/08:00/16:00 前 15 分钟进入资金费窗口。skill 在 risk.sized 
 - 不得违反三段保护梯：precheck 不通过的 SL 移动 mutating 调用必须放弃。
 - 不得绕过 cooldown：blocked symbol/side 在当前轮直接降级为观察，除非 manual_clear 全部条件成立。
 - 不得用经济 R 不合格的微型仓位通过审计；1R < 0.25 USDT 的候选必须放弃或重设计。
+- 不得请求人工确认来放宽单笔风险百分比；超过 2% 不触发人工确认，必须按 `V2.txt` 的自动门禁决定是否进入 2%-5% 区间；超过当前自动上限时只能自动降仓、缩名义、改入场或拒绝。
 - 不再依赖 `audit verify-v2` 语义门禁；它已被删除，hash chain 校验由 `audit verify` 按需进行，不阻塞下一轮。
