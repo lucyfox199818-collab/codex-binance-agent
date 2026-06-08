@@ -73,5 +73,8 @@ Title: v0.1.0 - Dry-run-first Codex + CCXT MCP trading workflow
 
 - 选择并添加明确的开源 License。没有 License 时，外部开发者默认没有复制、修改和
   分发代码的许可，会阻碍采用和贡献。
+- 在仓库 Settings → Pages 中将 Source 设为 GitHub Actions，然后手动运行
+  `Deploy Chinese landing page` 工作流，即可把临时 RawGitHack 主页切换到
+  `https://lucyfox199818-collab.github.io/codex-binance-agent/`。
 - 是否启用 GitHub Discussions 作为中文问答区。
 - 是否公开路线图和 good first issue 标签。

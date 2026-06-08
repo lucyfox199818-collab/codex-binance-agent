@@ -3,7 +3,7 @@
 本目录用于统一项目在中文开发者和加密技术社区的公开介绍。发布时优先链接：
 
 - 仓库：https://github.com/lucyfox199818-collab/codex-binance-agent
-- 中文主页：https://lucyfox199818-collab.github.io/codex-binance-agent/
+- 中文主页：https://raw.githack.com/lucyfox199818-collab/codex-binance-agent/main/docs/site/index.html
 - 演示：https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/demo/codex-binance-agent-demo.mp4
 - 分享封面：[SVG](assets/social-preview.svg) · [PNG](assets/social-preview.png)
 - GitHub Release：https://github.com/lucyfox199818-collab/codex-binance-agent/releases/tag/v0.1.0
