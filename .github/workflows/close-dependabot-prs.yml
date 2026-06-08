@@ -1,0 +1,32 @@
+name: Close Dependabot PRs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/close-dependabot-prs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close open Dependabot pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh pr list \
+            --state open \
+            --author app/dependabot \
+            --json number \
+            --jq '.[].number' \
+            | while read -r number; do
+                gh pr close "${number}" \
+                  --comment "Closing automated dependency PR during project promotion wrap-up. Dependency updates should be reviewed and grouped deliberately."
+              done
