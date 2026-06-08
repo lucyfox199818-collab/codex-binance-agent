@@ -1,0 +1,49 @@
+name: Feature request
+description: Propose a focused improvement to tools, safety, audit, strategy workflow, or docs.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - market data
+        - account and order tools
+        - trading safety
+        - audit and review
+        - strategy workflow
+        - exchange compatibility
+        - documentation
+        - community
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the expected behavior and scope.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety and compatibility impact
+      description: Explain effects on dry-run, trading permissions, credentials, audit, or existing workflows.
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to help implement or test this change.

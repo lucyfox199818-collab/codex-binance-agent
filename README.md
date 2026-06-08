@@ -3,14 +3,21 @@
 这是一个让 Codex CLI 通过 MCP 读取加密货币市场、管理 Binance USDT-M
 永续合约，并在本地记录完整交易审计的项目。
 
+[GitHub 仓库](https://github.com/lucyfox199818-collab/codex-binance-agent)
+· [演示视频](demo/codex-binance-agent-demo.mp4)
+· [中文社区推广素材](docs/promotion/README.md)
+
+**30 秒了解项目：** Codex 负责当前会话内的研究和交易决策，`ccxt-mcp`
+提供行情、账户与交易工具，项目本地 skills 约束 V1/V2/V3 流程，
+`audit-system` 记录每轮决策、风控、执行和复核。真实交易默认关闭，首次体验无需
+API key 即可读取公共行情并运行 dry-run。
+
 项目包含：
 
 - `ccxt-mcp/`：基于 CCXT 的 MCP stdio 服务，提供行情、账户、订单和交易工具。
 - `audit-system/`：本地审计记录、复盘界面，以及只读的 `trading-intel` MCP。
 - `V1.txt`、`V2.txt`、`V3.txt`：三套交易策略和风险边界。
 - `.cursor/skills/trading-v*/`：Codex 执行对应策略时必须遵循的项目本地 skills。
-
-项目演示视频：[Codex Binance Agent dry-run demo](demo/codex-binance-agent-demo.mp4)
 
 > 风险提示：本项目可以提交真实合约订单。默认配置关闭真实交易并启用
 > dry-run。请先在 dry-run 或 Binance 测试环境中验证。任何策略、模型或示例都不保证盈利，
@@ -45,7 +52,7 @@ codex
 ## 安装项目
 
 ```bash
-git clone <repository-url> codex-binance-agent
+git clone https://github.com/lucyfox199818-collab/codex-binance-agent.git
 cd codex-binance-agent
 
 cd ccxt-mcp
@@ -317,6 +324,7 @@ npm run build
 
 - [`ccxt-mcp/README.md`](ccxt-mcp/README.md)
 - [`audit-system/README.md`](audit-system/README.md)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## 常见问题
 

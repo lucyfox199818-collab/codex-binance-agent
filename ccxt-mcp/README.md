@@ -76,7 +76,7 @@ Docker MCP stdio 配置示例：
 
 ## 工具列表
 
-当前显式注册 100 个 MCP tools；此外 `ccxt_call` 可以调用当前交易所实例上存在的任意 CCXT 方法。
+当前显式注册 101 个 MCP tools；此外 `ccxt_call` 可以调用当前交易所实例上存在的任意 CCXT 方法。
 
 基础和市场数据：
 

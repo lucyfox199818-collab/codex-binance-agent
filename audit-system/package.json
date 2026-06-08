@@ -3,7 +3,26 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "Local audit recorder and UI for trading cycles.",
+  "description": "Local SQLite, JSONL, and hash-chain audit workbench for Codex trading cycles.",
+  "keywords": [
+    "codex",
+    "mcp",
+    "trading-audit",
+    "sqlite",
+    "jsonl",
+    "hash-chain",
+    "crypto",
+    "typescript"
+  ],
+  "homepage": "https://github.com/lucyfox199818-collab/codex-binance-agent/tree/main/audit-system#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucyfox199818-collab/codex-binance-agent.git",
+    "directory": "audit-system"
+  },
+  "bugs": {
+    "url": "https://github.com/lucyfox199818-collab/codex-binance-agent/issues"
+  },
   "bin": {
     "trading-intel-mcp": "./dist/mcp/index.js"
   },
@@ -34,6 +53,6 @@
     "@types/node": "^22.15.21",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.4"
+    "vitest": "^4.1.8"
   }
 }

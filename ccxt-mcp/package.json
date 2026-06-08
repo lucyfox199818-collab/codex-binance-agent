@@ -1,7 +1,26 @@
 {
   "name": "ccxt-mcp",
   "version": "0.1.0",
-  "description": "MCP server exposing CCXT market-data and trading capabilities.",
+  "description": "CCXT MCP server for Codex market data, account access, dry-run, and guarded crypto trading.",
+  "keywords": [
+    "codex",
+    "mcp",
+    "mcp-server",
+    "ccxt",
+    "binance",
+    "crypto",
+    "trading",
+    "dry-run"
+  ],
+  "homepage": "https://github.com/lucyfox199818-collab/codex-binance-agent#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucyfox199818-collab/codex-binance-agent.git",
+    "directory": "ccxt-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/lucyfox199818-collab/codex-binance-agent/issues"
+  },
   "type": "module",
   "bin": {
     "ccxt-mcp": "./dist/index.js"
@@ -31,6 +50,6 @@
     "@types/node": "^22.15.21",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.4"
+    "vitest": "^4.1.8"
   }
 }
