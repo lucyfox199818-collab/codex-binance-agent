@@ -65,6 +65,7 @@ V2EX；必须由项目作者基于自己的开发过程和真实体验重新写�
 - [短消息与视频简介](short-posts.md)：微信群、Telegram、朋友圈、B 站。
 - [发布检查表](release-checklist.md)：发布前检查、评论回复和效果记录。
 - [GitHub 仓库元数据](github-metadata.md)：About、topics、Social preview 和首个 Release。
+- [中文试用反馈 Issue 正文](community-feedback-issue.md)：安装、MCP、dry-run 与审计反馈。
 
 ## 推荐标签
 

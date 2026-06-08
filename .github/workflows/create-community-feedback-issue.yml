@@ -1,0 +1,44 @@
+name: Create Chinese community feedback issue
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/create-community-feedback-issue.yml
+      - docs/promotion/community-feedback-issue.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Create issue when missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: "中文社区试用反馈：安装、MCP 配置与 Dry-run"
+        run: |
+          existing="$(
+            gh issue list \
+              --state all \
+              --search "\"${TITLE}\" in:title" \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [ -n "${existing}" ]; then
+            echo "Feedback issue already exists: #${existing}"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "${TITLE}" \
+            --body-file docs/promotion/community-feedback-issue.md
