@@ -20,6 +20,9 @@ https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/demo/codex
 官方 MCP Registry：
 https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp
 
+中文试用反馈：
+https://github.com/lucyfox199818-collab/codex-binance-agent/issues/1
+
 它不是一段“帮我炒币”的提示词，主要由四部分组成：
 
 - `ccxt-mcp`：TypeScript MCP stdio 服务，显式注册 101 个行情、账户、订单和衍生品工具。
@@ -48,7 +51,7 @@ Agent 风控和交易审计，不是收益产品，也不构成投资建议。
 3. 怎样进一步降低误操作和真实交易风险？
 4. 是否有人愿意一起补测试、文档或支持更多交易所？
 
-如果你在做 Codex、MCP、CCXT 或 Agent 审计，欢迎直接提 Issue。
+如果你在做 Codex、MCP、CCXT 或 Agent 审计，欢迎在中文试用反馈 Issue 中留言。
 
 ## V2EX 特别限制
 

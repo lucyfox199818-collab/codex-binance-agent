@@ -9,6 +9,7 @@
 - GitHub Release：https://github.com/lucyfox199818-collab/codex-binance-agent/releases/tag/v0.1.0
 - MCP Registry：https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp
 - 公开镜像：`ghcr.io/lucyfox199818-collab/ccxt-mcp:0.1.0`
+- 中文试用反馈：https://github.com/lucyfox199818-collab/codex-binance-agent/issues/1
 
 ## 一句话介绍
 

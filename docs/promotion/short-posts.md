@@ -8,7 +8,8 @@ https://github.com/lucyfox199818-collab/codex-binance-agent
 
 包含 101 个显式 CCXT MCP 工具、V1/V2/V3 三套本地交易 skills，以及带 SQLite、
 JSONL 和 hash chain 的全链路审计。默认关闭真实交易并启用 dry-run，没有 API key
-也能先读取公共行情。想找人一起测试安装、风控边界和审计设计。
+也能先读取公共行情。想找人一起测试安装、风控边界和审计设计：
+https://github.com/lucyfox199818-collab/codex-binance-agent/issues/1
 
 说明：这是工程实验，不构成投资建议，合约交易可能损失本金。
 
