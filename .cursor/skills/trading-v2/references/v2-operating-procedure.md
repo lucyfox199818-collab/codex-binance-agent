@@ -43,14 +43,14 @@
 4. **持仓/订单/保护单对账**：以 positions 和 balance positions 作为持仓事实来源；把条件/保护单按 symbol、positionSide、方向和数量匹配到已有持仓。无对应持仓的条件/保护单必须标记为孤立保护单，先取消或按 V2 风控处理；复核清零前只限制受影响的 symbol/side，或在影响总敞口时限制新增执行。
 5. **已有持仓动态管理**：验证 SL/TP，按 `V2.txt` 处理必需退出/调整；任何 SL 移动/收紧/migrate 前必须先写 `protection.precheck`（见下文 §protection.precheck）。
 6. **全市场覆盖**：刷新配置好的合约市场池和当前 broad market payload，并写 `market.snapshot`。
-7. **截面选择**：用当前轮数据重新计算 eligible pool、long Top 5、short Top 5、排除项和排序候选，并写 `candidate.ranked` / `candidate.filtered`。candidate.filtered payload 必须包含每个候选的 `cooldown_state`（active/clear/blocked + remaining_seconds）、标准化拒绝原因、候选降频状态、连续拒绝次数、剩余跳过轮数和重新激活条件。
-8. **CTA 决策**：按 `V2.txt` 判断候选是否可交易；CTA 阶段必须再次对每个候选 `audit cooldowns check`，blocked=true 的候选只能记为观察。每个候选写 `cta.decided`，并记录是否出现新的 15m 已收盘结构事件、是否解除候选降频、拒绝时价格和后续 `rejected_candidate_outcome` 待更新标记。
-9. **风险仓位**：计算每个候选的 size、leverage、margin impact、最大持仓约束、账户可用性、RR、保护有效性、`expected_funding_pnl_usdt`、`economic_r_check`、`account_state` 和账户模式/positionSide preflight，并写 `risk.sized`。经济 R 下限（1R ≥ max(成本 3 倍, 0.25 USDT)）、资金费窗口（见下文 §funding window）和 Binance USDT-M hedge/one-way positionSide 一致性在此阶段硬校验。
-10. **执行和保护**：只要当前持仓数低于 `V2.txt` 最大持仓上限，按排名顺序开符合 cooldown、CTA、仓位、账户模式、positionSide、盘口和保护约束的新 symbol，直到达到上限或候选用完；提交前写 `execution.planned`（含 `protection_path`: `protected_futures_entry` 或 `manual_protection_sequence`，后者必须含 `manual_protection_sequence_reason`，以及 exchange/account/leverage/margin/precision/min-order preflight），dry-run 写 `order.dry_run`，真实响应写 `order.submitted`。
+7. **截面选择**：用当前轮数据重新计算 eligible pool、long Top 5、short Top 5、排除项和排序候选，并写 `candidate.ranked` / `candidate.filtered`。candidate.filtered payload 必须包含每个候选的 `cooldown_state`（active/clear/blocked + remaining_seconds）、标准化拒绝原因、候选降频状态、连续拒绝次数、剩余跳过轮数和重新激活条件。连续 no-trade 触发后，还必须写 20-35 个 widened seed 覆盖、至少 5 个 setup_bucket 覆盖缺口、近合格候选列表和 `near_qualified_passive_plan`。
+8. **CTA 决策**：按 `V2.txt` 判断候选是否可交易；CTA 阶段必须再次对每个候选 `audit cooldowns check`，blocked=true 的候选只能记为观察。每个候选写 `cta.decided`，并记录 `setup_bucket`、`passive_entry_zone`、`limit_or_ioc_accept_price`、`do_not_chase_price`、是否出现新的 15m 已收盘结构事件、是否解除候选降频、拒绝时价格和后续 `rejected_candidate_outcome` 待更新标记。`breakout_retest` / `trend_pullback` 没有更有利被动入场区时必须按 `V2.txt` 降为观察；若拒绝原因是 `reclaim 未确认`，必须说明缺的是已收盘市场结构确认而非人工确认，并给出下一轮可验证条件。
+9. **风险仓位**：计算每个候选的 size、leverage、margin impact、最大持仓约束、账户可用性、RR、保护有效性、当前自动单笔风险上限、连续正 R 样本状态、`expected_funding_pnl_usdt`、`economic_r_check`、`account_state` 和账户模式/positionSide preflight，并写 `risk.sized`。经济 R 下限（1R ≥ max(成本 3 倍, 0.25 USDT)）、资金费窗口（见下文 §funding window）、`V2.txt` 定义的 0.25%-0.5% 观察期风险上限和 Binance USDT-M hedge/one-way positionSide 一致性在此阶段硬校验。
+10. **执行和保护**：只要当前持仓数低于 `V2.txt` 最大持仓上限，按排名顺序开符合 cooldown、CTA、仓位、账户模式、positionSide、盘口和保护约束的新 symbol，直到达到上限或候选用完；新增真实仓位默认使用限价、IOC、post-only 不成交即放弃或带价格边界的 marketable limit。`type=market` 新入场只有在同一轮可证明 final order book 到实际提交开始 ≤ 3 秒时才允许，证明不足即禁止。提交前写 `execution.planned`（含 `protection_path`: `protected_futures_entry` 或 `manual_protection_sequence`，后者必须含 `manual_protection_sequence_reason`，以及 exchange/account/leverage/margin/precision/min-order preflight、`passive_entry_zone`、`limit_or_ioc_accept_price`、`do_not_chase_price`、执行方式和 market entry 是否被禁止/允许的证据），dry-run 写 `order.dry_run`，真实响应写 `order.submitted`。
 11. **成交后执行质量复核**：真实入场和主动退出后立即复核实际成交均价、成交漂移、滑点/点差/冲击成本占 R、成交后实际 1R、实际 RR、实际成本覆盖、实际最大亏损 USDT 和权益占比。若触发 `slippage_risk_abort`，先用 reduce-only/正确 positionSide 平掉新增风险并清理孤立保护单，再写 abort cooldown。
 12. **cooldown 写入**：本轮发生 stop / abort / manual_close / `slippage_risk_abort` 时，立刻调 `audit cooldowns set`，并把返回的 cooldownId 写入 `cooldown.written`。
 13. **动作后复核**：重新读取账户、持仓、合约普通未成交委托和保护单，并写 `post.verify`。孤立保护单取消返回 unknown/order not found 时，必须通过重新读取 positions、普通 open orders 和 open algo orders 判定是否已清零；已清零时记录 `benign_cleanup_unknown_order`，未清零时继续清理或报告阻塞。
-14. **最终总结**：输出下方完整总结契约，并写 `summary.finalized`。总结必须覆盖候选降频、拒绝候选后验统计更新状态、执行质量降频/market entry 限制状态和下一轮优先验证的策略学习项。若连续 15 轮或 30 分钟无新开仓，追加 `no_trade_diagnostic`：主阻塞原因分布、近合格候选、可用被动限价计划、以及不能放宽的硬门禁。
+14. **最终总结**：输出下方完整总结契约，并写 `summary.finalized`。总结必须覆盖候选降频、拒绝候选后验统计更新状态、执行质量降频/market entry 限制状态和下一轮优先验证的策略学习项。若连续 15 轮或 30 分钟无新开仓，追加 `no_trade_diagnostic`：主阻塞原因分布、20-35 个 widened seed 覆盖、至少 5 个 setup_bucket、近合格候选、至少 5 个可用被动限价/IOC/边界计划（不足时说明硬阻塞或数据缺口）、以及不能放宽的硬门禁。
 15. **进入下一轮等待**。不再运行任何 V2 语义门禁（verify-v2 已删除）；hash chain 校验由 `audit verify` 按需运行，不阻塞下一轮。
 
 如果某个阶段因数据或工具不可用而无法运行，继续到最终总结并标记明确阻塞原因。不得在总结前静默停止。
@@ -63,7 +63,7 @@
 | --- | --- | --- | --- |
 | early | `< 0.5` | 继续原 SL/TP；净值为正的部分减仓；等待 5m/15m 已收盘结构 | 任何全仓 SL 向入场方向移动（含保本）、贴现价 trailing |
 | mid | `0.5 ≤ < 1.0` | 移到 5m/15m 噪声外结构位，新 SL 距现价 ≥ 1.5 × ATR(15m,14) | 贴现价、贴入场价、新 SL 落在 ATR(15m,14) × 1.5 以内 |
-| high_profit_pre_tp1 | `≥ 1.0` 但 TP1 未成交 | 只能在新的已收盘 15m 结构外、且新 SL 距现价 ≥ 1.5 × ATR(15m,14) 时移动；优先执行 TP1 | 仅因达到 1R 就把全仓 SL 抬到净保本附近；把 SL 放进普通噪声带 |
+| high_profit_pre_tp1 | `≥ 1.0` 且第一目标临近或已触及前 | 趋势扩展条件成立时优先全仓上移 TP + SL；新 SL 必须在已收盘 15m 结构外且距现价 ≥ 1.5 × ATR(15m,14)；扩展条件不足时执行 TP1 + runner | 只上移 TP 不上移 SL；仅因达到 1R 就把全仓 SL 抬到净保本附近；把 SL 放进普通噪声带；旧 close-all TP 可能触发时先挂新 TP 再撤旧 TP |
 | runner | TP1 部分成交后 | 5m/15m 结构、前低/前高、跟踪止盈 | 1m/最新价机械追踪、用 closePosition=true 做部分退出 |
 
 `R_progress`（多单）= `(current_price − entry) / (entry − planned_stop)`；空单方向相反。
@@ -80,6 +80,9 @@
   "min_required_R_progress": number,
   "net_be_price": number,
   "new_sl_net_expected_pnl_usdt": number,
+  "trend_following_active": boolean,
+  "new_tp": number | null,
+  "next_protection_move_condition": string | null,
   "gate_result": "pass" | "block_early_stage" | "block_atr_too_tight" | "block_net_negative" | "override",
   "early_protection_override_reason": string | null
 }
@@ -156,14 +159,14 @@ cooldown.set 失败必须在 summary 报告，并把该 symbol/side 后续入场
 6. 当 `V2.txt` 要求时，确认已包含 stop loss 和 take profit。
 7. 检查 `V2.txt` 最大持仓约束：如果当前持仓数已经达到或超过上限，不提交新增执行。
 8. 对新开仓、保护移动、减仓、平仓、撤单和改杠杆等 mutating 动作，先写入同一 `cycle_id` 下的 `execution.planned` 或 `action.planned`。事件 payload 必须包含工具名、symbol、方向、数量、计划价、触发价、positionSide、reduceOnly、final order book 时间、允许最大价格漂移、计划价到可成交价漂移 R、实际风险相对计划风险倍数、实际 RR、止损噪声门禁、净保本/经济 R 计算摘要和放弃条件。
-9. 对已有持仓做保护移动、TP1、runner 管理、主动减仓、主动平仓或孤立单清理前，必须重新读取 positions、balance positions、合约普通未成交委托、open algo orders、最近 closed orders/trades 和最新盘口。状态时间距 mutating 提交不得超过 3 秒；若发现 TP/SL 已成交、仓位数量变化、仓位全平或保护单孤立，必须先进入成交后对账和孤立单清理，不得继续用旧持仓提交新保护。
+9. 对已有持仓做保护移动、全仓趋势跟踪 TP/SL 迁移、TP1、runner 管理、主动减仓、主动平仓或孤立单清理前，必须重新读取 positions、balance positions、合约普通未成交委托、open algo orders、最近 closed orders/trades 和最新盘口。状态时间距 mutating 提交不得超过 3 秒；若发现 TP/SL 已成交、仓位数量变化、仓位全平或保护单孤立，必须先进入成交后对账和孤立单清理，不得继续用旧持仓提交新保护。
 10. SL/TP 移动 mutating 前必须先写 `protection.precheck`（见 §protection.precheck）。
 
 Binance USDT-M 新开仓必须优先使用 `ccxt_create_protected_futures_entry` 提交 protected entry。该工具会先创建 close-position 止损和止盈 algo 保护单，再提交入场单；如果保护或入场失败，工具会撤销已接受保护并返回失败阶段。不要把 `ccxt_create_order_with_take_profit_and_stop_loss` 当作 Binance USDT-M 的首选路径；服务端虽会把该 bracket 调用改路由到 protected entry，但 V2 执行计划和审计里应直接写明 `ccxt_create_protected_futures_entry`。
 
 protected_futures_entry abort（保护已挂但 entry 未成交）必须按 §cooldown 写入触发 `reason=abort` cooldown。
 
-Binance USDT-M 分层退出不得使用 `closePosition=true` 做 TP1。`closePosition=true` 只表示 Close-All，用于关闭全部当前剩余仓位；TP1、部分减仓和 runner 部分退出必须指定数量并使用 reduce-only。优先用普通 reduce-only limit 作为 TP1；只有当前工具和交易所返回明确支持 quantity-based `TAKE_PROFIT_MARKET`，且计划中写明 TP1 数量、runner 数量、互斥关系和孤立单清理方式，才允许使用数量化条件 TP。不得假设多个同向 close-all 条件单可以安全共存。
+Binance USDT-M 分层退出不得使用 `closePosition=true` 做 TP1。`closePosition=true` 只表示 Close-All，用于关闭全部当前剩余仓位；TP1、部分减仓和 runner 部分退出必须指定数量并使用 reduce-only。优先用普通 reduce-only limit 作为 TP1；只有当前工具和交易所返回明确支持 quantity-based `TAKE_PROFIT_MARKET`，且计划中写明 TP1 数量、runner 数量、互斥关系和孤立单清理方式，才允许使用数量化条件 TP。不得假设多个同向 close-all 条件单可以安全共存。全仓趋势跟踪模式允许迁移 close-all TP，但必须先取消旧 close-all TP 并确认取消成功，再创建新 TP/SL；若旧 TP 可能立即触发，按实际全平风险处理，不得先挂新同向 close-all TP。
 
 ### 账户模式和 positionSide preflight
 
@@ -246,29 +249,26 @@ Binance hedge-mode 账户不得使用 `positionSide=BOTH` 提交受保护入场�
 2. 立即写入 `order.submitted`、`action.executed` 或 `action.remediated`，不得等到轮次结束再集中补写。payload 必须包含交易所 orderId/algoId、clientOrderId/clientAlgoId、avgPrice、executedQty、triggerPrice、createTime/updateTime/triggerTime、错误码、撤销结果、本地写入时间和 payload hash。
 3. 触发了 stop / abort / manual_close / `slippage_risk_abort` 的事件，调 `audit cooldowns set` 并写 `cooldown.written`。stop 必须额外写 `stop_classification`（`structure_invalidated` / `noise_stop_candidate` / `unknown`）；`noise_stop_candidate` 必须写 `reentry_watch=true`、观察窗口、重入触发条件和后验 MFE/MAE 待更新字段。
 4. 重新读取账户快照、positions、balance positions、合约普通未成交委托、open algo orders 和最近 closed orders/trades。
-5. 验证持仓状态，包括 TP1 后剩余 runner 数量、全仓 TP/SL 后 flat 状态、成交均价和手续费。
-6. 验证止损止盈保护；如果 TP1 已成交，按真实剩余数量重算 runner 保护，不得沿用原始全仓数量。
+5. 验证持仓状态，包括全仓趋势跟踪迁移后的剩余数量、TP1 后剩余 runner 数量、全仓 TP/SL 后 flat 状态、成交均价和手续费。
+6. 验证止损止盈保护；如果全仓趋势跟踪迁移已提交，必须确认旧 TP 不再存在、新 TP/SL 触发价正确且数量匹配；如果 TP1 已成交，按真实剩余数量重算 runner 保护，不得沿用原始全仓数量。
 7. 验证是否出现无对应持仓的残留条件/保护单；如果出现，先取消或按 `V2.txt` 处理风险，并再次读取账户、持仓、合约普通未成交委托和保护单。
 8. 如果交易后保护缺失、不匹配、孤立或不清楚，按 `V2.txt` 处理风险；只限制受影响的 symbol/side，或在无法确认总仓位约束时暂停真实执行。
 9. 如果动作已经发生但审计只能事后补录，事件 tags 或 payload 必须明确写 `reconstructed: true`，summary 必须写明"事后补录"，并记录交易所真实时间和本地补录时间。
 
 ## 强制最终总结
 
-每一轮都必须以完整总结结束。不得因为不交易、阻塞、dry-run、部分数据或错误而省略。使用以下结构，并明确标记 unavailable 字段：
+每一轮都必须以完整总结结束。不得因为不交易、阻塞、dry-run、部分数据或错误而省略。面向用户的总结必须使用中文段落标题和中文说明，像 V1 的轮末总结一样直接可读；审计 payload 可保留英文键名、枚举值和字段名以便机器复盘。字段不可用时必须明确标记 `unavailable` 并说明原因。使用以下中文结构：
 
-- **Cycle**：timestamp、cadence、V2 source path/status、exchange、live/dry-run state。
-- **Audit**：cycle_id、audit data dir、audit write status、hash chain status（可选 `audit verify` 结果）、missing audit stages。
-- **Cooldown**：active list（symbol、side、reason、remaining_seconds、source_cycle_id、stop_classification、reentry_watch、reentry_trigger）、cycle 内新写入 cooldown 列表、cycle 内 manual_clear 列表（含 override_reason）、cooldown CLI errors。
-- **Data acquisition**：account、positions、合约普通未成交委托、conditional/protection orders、market batch calls、使用的 incremental cursors、missing data 和 rate-limit/API issues。
-- **Account and exposure**：可用的 equity/balance 字段、当前持仓数、距离 V2 最大持仓上限的剩余名额、margin/leverage state、`account_state`（normal / constrained_by_specific_gate）、已有持仓管理动作。
-- **Market scan**：full-universe size、eligible count、exclusions、seed list size、long Top 5、short Top 5，以及排名是否从当前轮数据重新计算。
-- **CTA and candidates**：每个被考虑的排序候选、CTA pass/fail、veto/downrank context，以及被拒绝时的明确 no-trade reason（含 `cooldown_blocked` / `funding_window_blocked` / `economic_r_blocked` / `protection_ladder_blocked` / `execution_quality_degraded`）。列出候选降频列表、连续拒绝次数、剩余跳过轮数、重新激活条件和本轮 `rejected_candidate_outcome` 更新状态。
-- **Risk and sizing**：每个候选的 risk、stop distance、stop-distance ATR multiple、noise-stop gate、target、RR、size、leverage/margin impact、`r_usdt`、`economic_r_check`、`expected_funding_pnl_usdt`、`funding_window_state`、`account_state`、账户模式/positionSide preflight 和 position-cap decision。
-- **Execution**：live/dry-run action、entry orders、protection orders、order ids/responses、failed execution calls、`execution_quality_gates` 矩阵结果、`protection_path`（protected_futures_entry / manual_protection_sequence + reason），以及 SL/TP 是否同步。真实成交时列出 post-fill actual drift、actual 1R、actual RR、actual-vs-planned risk multiple、stop-distance ATR multiple、noise-stop gate、actual max loss、是否触发 `slippage_risk_abort`、最近 3 笔执行质量和 market entry 降频状态。
-- **Post-action verification**：最终 positions、合约普通未成交委托、conditional/protection orders、孤立保护单检查、unknown/order-not-found 清理复核结果、unresolved risks、下一轮候选级执行资格。
-- **Strategy learning**：本轮可量化学习项，包括被拒候选后验统计是否需要更新、执行质量是否恶化、是否触发候选降频、是否触发 market entry 降频、下一轮哪些规则需要优先验证。
-- **No-trade diagnostic**：仅在连续 15 轮或 30 分钟无新开仓时必填；列出主阻塞原因分布、近合格候选、可用被动限价/IOC 计划和不得放宽的硬风控。该字段不得把硬门禁失败的候选升级为交易。
-- **Next cycle**：下一次运行时间、需要带到下一轮的 cursors/timestamps、活跃 cooldown 到期时间，以及如果循环应停止时的明确 stop reason。
+- **一、轮次和运行状态**：timestamp、cadence、V2 source path/status、exchange、live/dry-run state。
+- **二、审计和 cooldown 状态**：cycle_id、audit data dir、audit write status、hash chain status（可选 `audit verify` 结果）、missing audit stages；active cooldown list（symbol、side、reason、remaining_seconds、source_cycle_id、stop_classification、reentry_watch、reentry_trigger）、cycle 内新写入 cooldown 列表、cycle 内 manual_clear 列表（含 override_reason）、cooldown CLI errors。
+- **三、数据读取和账户敞口**：account、positions、合约普通未成交委托、conditional/protection orders、market batch calls、使用的 incremental cursors、missing data、rate-limit/API issues；可用的 equity/balance 字段、当前持仓数、距离 V2 最大持仓上限的剩余名额、margin/leverage state、`account_state`（normal / constrained_by_specific_gate）、已有持仓管理动作。
+- **四、市场扫描和截面选币**：full-universe size、eligible count、exclusions、seed list size、long Top 5、short Top 5，以及排名是否从当前轮数据重新计算。
+- **五、CTA 候选和放弃原因**：每个被考虑的排序候选、CTA pass/fail、`setup_bucket`、`passive_entry_zone`、`limit_or_ioc_accept_price`、`do_not_chase_price`、veto/downrank context，以及被拒绝时的明确 no-trade reason（含 `cooldown_blocked` / `funding_window_blocked` / `economic_r_blocked` / `protection_ladder_blocked` / `execution_quality_degraded`）。列出候选降频列表、连续拒绝次数、剩余跳过轮数、重新激活条件和本轮 `rejected_candidate_outcome` 更新状态。
+- **六、风险仓位和交易计划**：每个候选的 risk、当前自动单笔风险上限、连续正 R 样本状态、stop distance、stop-distance ATR multiple、noise-stop gate、target、RR、size、leverage/margin impact、`r_usdt`、`economic_r_check`、`expected_funding_pnl_usdt`、`funding_window_state`、`account_state`、账户模式/positionSide preflight 和 position-cap decision。
+- **七、执行结果**：live/dry-run action、entry orders、protection orders、order ids/responses、failed execution calls、`execution_quality_gates` 矩阵结果、`protection_path`（protected_futures_entry / manual_protection_sequence + reason）、`passive_entry_zone`、`limit_or_ioc_accept_price`、`do_not_chase_price`，以及 SL/TP 是否同步。真实成交时列出 post-fill actual drift、actual 1R、actual RR、actual-vs-planned risk multiple、stop-distance ATR multiple、noise-stop gate、actual max loss、是否触发 `slippage_risk_abort`、最近 3 笔执行质量和 market entry 降频状态。
+- **八、动作后复核**：最终 positions、合约普通未成交委托、conditional/protection orders、孤立保护单检查、unknown/order-not-found 清理复核结果、unresolved risks、下一轮候选级执行资格。
+- **九、策略学习和下一轮重点**：本轮可量化学习项，包括被拒候选后验统计是否需要更新、执行质量是否恶化、是否触发候选降频、是否触发 market entry 降频、下一轮哪些规则需要优先验证；下一次运行时间、需要带到下一轮的 cursors/timestamps、活跃 cooldown 到期时间，以及如果循环应停止时的明确 stop reason。
+- **十、连续无交易诊断**：仅在连续 15 轮或 30 分钟无新开仓时必填；列出主阻塞原因分布、20-35 个 widened seed 覆盖、至少 5 个 setup_bucket、近合格候选、至少 5 个可用被动限价/IOC/边界计划（不足时说明硬阻塞或数据缺口）和不得放宽的硬风控。该字段不得把硬门禁失败的候选升级为交易。
 
 ## 状态报告
 

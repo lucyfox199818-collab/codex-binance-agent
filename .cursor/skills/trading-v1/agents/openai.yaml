@@ -1,0 +1,4 @@
+interface:
+  display_name: "交易 V1"
+  short_description: "通过 ccxt-mcp 运行 V1 实盘合约交易、保护下单与动作后复核流程"
+  default_prompt: "使用 $trading-v1 通过 ccxt-mcp 按 V1.txt 运行一轮实盘合约交易流程；禁止 runner、cron、sleep-loop 或持久自动交易进程。"

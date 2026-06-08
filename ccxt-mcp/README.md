@@ -173,6 +173,10 @@ close-position 止损和止盈 algo 保护单，再提交入场单；如果任�
 `ccxt_create_order_with_take_profit_and_stop_loss` 时，服务端也会自动走同一条保护优先路径，避免直通
 CCXT 当前不支持的 `createOrderWithTakeProfitAndStopLoss`。
 
+Binance USDT-M hedge mode 下，关闭 `positionSide=LONG` / `SHORT` 的普通订单不应向交易所提交
+`reduceOnly` 参数。服务端会在普通下单工具里自动移除该参数；`ccxt_create_reduce_only_order` 在此场景下
+会改走 `createOrder` 并保留 `positionSide`，避免 Binance 返回 `-1106 Parameter 'reduceonly' sent when not required`。
+
 合约和账户变更：
 
 - `ccxt_fetch_funding_rate`

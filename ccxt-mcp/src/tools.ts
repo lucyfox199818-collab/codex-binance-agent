@@ -1482,6 +1482,73 @@ function isBinanceFuturesConfig(config: CcxtMcpConfig): boolean {
   );
 }
 
+function isBinanceFuturesHedgePositionSide(params: JsonRecord): boolean {
+  const positionSide = upperString(params.positionSide);
+  return positionSide === "LONG" || positionSide === "SHORT";
+}
+
+function stripReduceOnlyParam(params: JsonRecord): JsonRecord {
+  const sanitized = { ...params };
+  delete sanitized.reduceOnly;
+  delete sanitized.reduceonly;
+  delete sanitized.reduce_only;
+  return sanitized;
+}
+
+function sanitizeBinanceFuturesHedgeOrderParams(config: CcxtMcpConfig, params: JsonRecord): JsonRecord {
+  if (!isBinanceFuturesConfig(config) || !isBinanceFuturesHedgePositionSide(params)) {
+    return params;
+  }
+
+  return stripReduceOnlyParam(params);
+}
+
+function sanitizeFinalParamsArg(config: CcxtMcpConfig, args: unknown[]): unknown[] {
+  if (args.length === 0) {
+    return args;
+  }
+
+  const lastArg = args[args.length - 1];
+  if (!lastArg || typeof lastArg !== "object" || Array.isArray(lastArg)) {
+    return args;
+  }
+
+  return [
+    ...args.slice(0, -1),
+    sanitizeBinanceFuturesHedgeOrderParams(config, lastArg as JsonRecord)
+  ];
+}
+
+function binanceFuturesHedgeReduceOnlyFallback(
+  config: CcxtMcpConfig,
+  spec: MethodToolSpec,
+  args: JsonRecord | undefined
+): { method: string; args: unknown[] } | undefined {
+  if (
+    spec.name !== "ccxt_create_reduce_only_order" ||
+    !isBinanceFuturesConfig(config)
+  ) {
+    return undefined;
+  }
+
+  const params = cleanParams(args?.params);
+  if (!isBinanceFuturesHedgePositionSide(params)) {
+    return undefined;
+  }
+
+  return {
+    method: "createOrder",
+    args: [
+      args?.symbol,
+      args?.type,
+      args?.side,
+      args?.amount,
+      optionalNumber(args, "price"),
+      stripReduceOnlyParam(params)
+    ]
+  };
+}
+
 function oppositeSide(side: unknown): "buy" | "sell" | undefined {
   if (side === "buy") {
     return "sell";
@@ -2028,7 +2095,7 @@ export function createToolHandlers(config: CcxtMcpConfig, exchangeProvider: Exch
         amount: args?.amount,
         price: optionalNumber(args, "price")
       };
-      const extraParams = cleanParams(args?.params);
+      const extraParams = sanitizeBinanceFuturesHedgeOrderParams(config, cleanParams(args?.params));
       if (!config.enableTrading || config.dryRun) {
         return dryRunResult(config, "createOrder", params);
       }
@@ -2099,13 +2166,15 @@ export function createToolHandlers(config: CcxtMcpConfig, exchangeProvider: Exch
         });
       }
 
-      const methodArgs = spec.buildArgs(args);
+      const fallbackInvocation = binanceFuturesHedgeReduceOnlyFallback(config, spec, args);
+      const method = fallbackInvocation?.method ?? spec.method;
+      const methodArgs = fallbackInvocation?.args ?? sanitizeFinalParamsArg(config, spec.buildArgs(args));
 
       if (spec.mutating && (!config.enableTrading || config.dryRun)) {
-        return dryRunResult(config, spec.method, { args: methodArgs });
+        return dryRunResult(config, method, { args: methodArgs });
       }
 
-      return await withExchange((exchange) => invoke(exchange, spec.method, methodArgs));
+      return await withExchange((exchange) => invoke(exchange, method, methodArgs));
     };
   }
 

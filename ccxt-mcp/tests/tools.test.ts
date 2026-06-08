@@ -42,6 +42,8 @@ function createFakeExchange() {
     fapiDataGetTakerlongshortRatio: vi.fn().mockResolvedValue([{ buySellRatio: "0.8" }]),
     transfer: vi.fn().mockResolvedValue({ id: "transfer-1" }),
     createOrder: vi.fn().mockResolvedValue({ id: "order-1" }),
+    createMarketOrder: vi.fn().mockResolvedValue({ id: "market-order-1" }),
+    createReduceOnlyOrder: vi.fn().mockResolvedValue({ id: "reduce-only-order-1" }),
     fetch: vi.fn().mockResolvedValue({ ip: "203.0.113.1" }),
     milliseconds: vi.fn(() => 123456)
   };
@@ -506,6 +508,63 @@ describe("createToolHandlers", () => {
       49000,
       50000,
       { reduceOnly: true }
+    );
+  });
+
+  it("routes Binance futures hedge-mode reduce-only closes through createOrder without reduceOnly", async () => {
+    const exchange = { ...createFakeExchange(), id: "binance" };
+    const handlers = createToolHandlers(
+      { ...config, exchangeId: "binance", defaultType: "future", enableTrading: true, dryRun: false },
+      () => exchange
+    );
+
+    const result = await handlers.ccxt_create_reduce_only_order({
+      symbol: "HYPE/USDT:USDT",
+      type: "market",
+      side: "sell",
+      amount: 4,
+      params: {
+        positionSide: "LONG",
+        reduceOnly: true
+      }
+    });
+
+    expect(result).toEqual({ id: "order-1" });
+    expect(exchange.createOrder).toHaveBeenCalledWith(
+      "HYPE/USDT:USDT",
+      "market",
+      "sell",
+      4,
+      undefined,
+      { positionSide: "LONG" }
+    );
+    expect(exchange.createReduceOnlyOrder).not.toHaveBeenCalled();
+  });
+
+  it("strips reduceOnly from Binance futures hedge-mode market order params", async () => {
+    const exchange = { ...createFakeExchange(), id: "binance" };
+    const handlers = createToolHandlers(
+      { ...config, exchangeId: "binance", defaultType: "future", enableTrading: true, dryRun: false },
+      () => exchange
+    );
+
+    const result = await handlers.ccxt_create_market_order({
+      symbol: "HYPE/USDT:USDT",
+      side: "sell",
+      amount: 4,
+      params: {
+        positionSide: "LONG",
+        reduceOnly: true
+      }
+    });
+
+    expect(result).toEqual({ id: "market-order-1" });
+    expect(exchange.createMarketOrder).toHaveBeenCalledWith(
+      "HYPE/USDT:USDT",
+      "sell",
+      4,
+      undefined,
+      { positionSide: "LONG" }
     );
   });
 
