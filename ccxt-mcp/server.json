@@ -1,0 +1,85 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.lucyfox199818-collab/ccxt-mcp",
+  "title": "Codex CCXT MCP",
+  "description": "Dry-run-first CCXT MCP with market, account, derivatives, and guarded trading tools.",
+  "websiteUrl": "https://github.com/lucyfox199818-collab/codex-binance-agent#readme",
+  "repository": {
+    "url": "https://github.com/lucyfox199818-collab/codex-binance-agent",
+    "source": "github",
+    "subfolder": "ccxt-mcp"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/lucyfox199818-collab/ccxt-mcp:0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "BINANCE_API_KEY",
+          "description": "Optional Binance API key for private account data and explicitly enabled trading.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "BINANCE_API_SECRET",
+          "description": "Optional Binance API secret.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CCXT_EXCHANGE_ID",
+          "description": "CCXT exchange identifier.",
+          "default": "binance"
+        },
+        {
+          "name": "CCXT_DEFAULT_TYPE",
+          "description": "Default CCXT market type.",
+          "default": "future"
+        },
+        {
+          "name": "CCXT_SANDBOX",
+          "description": "Use the exchange sandbox when supported.",
+          "default": "false",
+          "choices": [
+            "false",
+            "true"
+          ]
+        },
+        {
+          "name": "CCXT_ENABLE_TRADING",
+          "description": "Explicit live-trading permission gate. Keep false for read-only and dry-run use.",
+          "default": "false",
+          "choices": [
+            "false",
+            "true"
+          ]
+        },
+        {
+          "name": "CCXT_DRY_RUN",
+          "description": "Return simulated results for mutating tools instead of sending exchange actions.",
+          "default": "true",
+          "choices": [
+            "true",
+            "false"
+          ]
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "io.github.lucyfox199818-collab.codex-binance-agent": {
+        "defaultSafetyMode": "dry-run",
+        "registeredTools": 101,
+        "documentationLanguage": [
+          "zh-CN",
+          "en"
+        ]
+      }
+    }
+  }
+}

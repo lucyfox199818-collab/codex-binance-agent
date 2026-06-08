@@ -2,6 +2,8 @@
 
 `ccxt-mcp` 是一个独立的 MCP stdio 服务，用 CCXT 暴露加密货币交易所能力给 Codex 调用。默认交易关闭并启用 dry-run；需要真实下单时必须同时设置 `CCXT_ENABLE_TRADING=true` 和 `CCXT_DRY_RUN=false`。
 
+MCP Registry 名称：`io.github.lucyfox199818-collab/ccxt-mcp`
+
 ## 功能
 
 - 市场数据：markets、ticker、tickers、ticker summary、order book、trades、OHLCV、交易所状态、交易所时间、币种、手续费。

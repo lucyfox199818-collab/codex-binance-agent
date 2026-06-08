@@ -1,0 +1,61 @@
+name: Publish CCXT MCP
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-ccxt-mcp.yml
+      - ccxt-mcp/Dockerfile
+      - ccxt-mcp/server.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/lucyfox199818-collab/ccxt-mcp
+  VERSION: 0.1.0
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and publish OCI image
+        uses: docker/build-push-action@v6
+        with:
+          context: ccxt-mcp
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.VERSION }}
+            ${{ env.IMAGE }}:latest
+
+      - name: Verify anonymous image access
+        run: |
+          docker logout ghcr.io
+          docker manifest inspect "${IMAGE}:${VERSION}" >/dev/null
+
+      - name: Install MCP publisher
+        run: |
+          curl -L \
+            "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+            | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        working-directory: ccxt-mcp
+        run: ../mcp-publisher publish
