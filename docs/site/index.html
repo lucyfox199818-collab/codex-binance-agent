@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Codex Binance Agent | 默认 Dry-run 的可审计交易 Agent</title>
+    <meta
+      name="description"
+      content="Codex CLI + MCP + CCXT 的开源 Binance 交易实验项目，包含 101 个工具、V1/V2/V3 本地 skills、风险门禁和全链路审计。"
+    >
+    <meta
+      name="keywords"
+      content="Codex CLI,MCP,CCXT,Binance,AI Agent,量化交易,交易审计,dry-run,TypeScript"
+    >
+    <meta name="robots" content="index,follow">
+    <link
+      rel="canonical"
+      href="https://lucyfox199818-collab.github.io/codex-binance-agent/"
+    >
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:title" content="Codex Binance Agent">
+    <meta
+      property="og:description"
+      content="MCP 交易工具 · 默认 Dry-run · 全链路审计"
+    >
+    <meta
+      property="og:url"
+      content="https://lucyfox199818-collab.github.io/codex-binance-agent/"
+    >
+    <meta
+      property="og:image"
+      content="https://raw.githubusercontent.com/lucyfox199818-collab/codex-binance-agent/main/docs/promotion/assets/social-preview.png"
+    >
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="theme-color" content="#07111f">
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07111f;
+        --panel: #0d1d2d;
+        --panel-2: #10283d;
+        --text: #eff7fb;
+        --muted: #a6bdcc;
+        --cyan: #54d7cc;
+        --blue: #62b4ff;
+        --gold: #ebc36e;
+        --line: rgba(142, 200, 239, 0.16);
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 80% 5%, rgba(33, 111, 143, 0.2), transparent 28rem),
+          linear-gradient(145deg, var(--bg), #0a1d30 55%, #102941);
+        font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+        line-height: 1.65;
+      }
+      a { color: inherit; }
+      .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+      nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid var(--line);
+        background: rgba(7, 17, 31, 0.82);
+        backdrop-filter: blur(16px);
+      }
+      nav .wrap {
+        min-height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+      .brand { font-weight: 800; text-decoration: none; letter-spacing: 0.02em; }
+      .nav-links { display: flex; gap: 20px; color: var(--muted); font-size: 14px; }
+      .nav-links a { text-decoration: none; }
+      .nav-links a:hover { color: var(--cyan); }
+      header { padding: 92px 0 68px; }
+      .eyebrow {
+        color: var(--cyan);
+        font-weight: 800;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+      }
+      h1 { max-width: 900px; margin: 14px 0 18px; font-size: clamp(44px, 7vw, 76px); line-height: 1.05; }
+      .lead { max-width: 800px; margin: 0; color: var(--muted); font-size: clamp(18px, 2vw, 23px); }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        min-height: 46px;
+        padding: 0 20px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(16, 40, 61, 0.86);
+        font-weight: 750;
+        text-decoration: none;
+      }
+      .button.primary { color: #04151e; background: linear-gradient(90deg, var(--cyan), var(--blue)); }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+        margin-top: 56px;
+      }
+      .stat, .card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: rgba(13, 29, 45, 0.76);
+      }
+      .stat { padding: 22px; }
+      .stat strong { display: block; color: var(--cyan); font-size: 28px; }
+      .stat span { color: var(--muted); font-size: 14px; }
+      section { padding: 66px 0; border-top: 1px solid var(--line); }
+      h2 { margin: 0 0 12px; font-size: clamp(30px, 4vw, 46px); }
+      .section-lead { max-width: 760px; margin: 0 0 30px; color: var(--muted); }
+      .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+      .card { padding: 26px; }
+      .card h3 { margin: 0 0 8px; font-size: 21px; }
+      .card p { margin: 0; color: var(--muted); }
+      .tag {
+        display: inline-block;
+        margin-bottom: 14px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        color: var(--gold);
+        background: rgba(235, 195, 110, 0.1);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      pre {
+        overflow-x: auto;
+        margin: 22px 0 0;
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        color: #dff8f5;
+        background: #040b13;
+        font: 14px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .flow { color: var(--muted); font: 700 clamp(16px, 2.2vw, 24px)/1.8 ui-monospace, monospace; }
+      .warning {
+        border-left: 4px solid var(--gold);
+        padding: 22px 24px;
+        border-radius: 0 14px 14px 0;
+        color: #ebd9ae;
+        background: rgba(70, 51, 18, 0.32);
+      }
+      footer { padding: 38px 0 52px; color: var(--muted); font-size: 14px; }
+      @media (max-width: 760px) {
+        .nav-links { display: none; }
+        header { padding-top: 66px; }
+        .stats, .grid { grid-template-columns: 1fr; }
+      }
+    </style>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "name": "Codex Binance Agent",
+        "codeRepository": "https://github.com/lucyfox199818-collab/codex-binance-agent",
+        "programmingLanguage": "TypeScript",
+        "runtimePlatform": "Node.js",
+        "description": "Dry-run-first Codex CLI trading agent with CCXT MCP tools and end-to-end local audit.",
+        "version": "0.1.0"
+      }
+    </script>
+  </head>
+  <body>
+    <nav>
+      <div class="wrap">
+        <a class="brand" href="#">Codex Binance Agent</a>
+        <div class="nav-links">
+          <a href="#features">功能</a>
+          <a href="#architecture">架构</a>
+          <a href="#quickstart">快速体验</a>
+          <a href="#risk">风险边界</a>
+        </div>
+      </div>
+    </nav>
+
+    <header>
+      <div class="wrap">
+        <div class="eyebrow">Open Source · Codex CLI · MCP</div>
+        <h1>把交易 Agent 做成一条可审计的工程链路</h1>
+        <p class="lead">
+          Codex CLI 负责当前会话内的研究与决策，CCXT MCP 提供工具，
+          项目本地 skills 约束流程，本地审计系统记录风险、执行和复核。
+          真实交易默认关闭。
+        </p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/lucyfox199818-collab/codex-binance-agent">查看 GitHub</a>
+          <a class="button" href="https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/demo/codex-binance-agent-demo.mp4">观看演示</a>
+          <a class="button" href="https://github.com/lucyfox199818-collab/codex-binance-agent/releases/tag/v0.1.0">下载 v0.1.0</a>
+        </div>
+        <div class="stats">
+          <div class="stat"><strong>101</strong><span>显式 MCP 工具</span></div>
+          <div class="stat"><strong>3</strong><span>V1 / V2 / V3 流程</span></div>
+          <div class="stat"><strong>63</strong><span>自动化测试</span></div>
+          <div class="stat"><strong>Active</strong><span>官方 MCP Registry</span></div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section id="features">
+        <div class="wrap">
+          <h2>不是一段“帮我炒币”的提示词</h2>
+          <p class="section-lead">
+            项目把模型判断、工具权限、执行结果和复盘记录拆成明确组件，
+            让关键状态可以读取、验证和追踪。
+          </p>
+          <div class="grid">
+            <article class="card">
+              <span class="tag">CCXT MCP</span>
+              <h3>市场、账户与订单工具</h3>
+              <p>覆盖行情、持仓、成交、普通订单、条件单、保护单、资金费率和 Binance USDT-M 公共情绪数据。</p>
+            </article>
+            <article class="card">
+              <span class="tag">LOCAL SKILLS</span>
+              <h3>三套有边界的交易流程</h3>
+              <p>V1 单轮扫描、V2 当前会话连续决策、V3 自由裁量研究，各自具有策略文件、门禁与审计纪律。</p>
+            </article>
+            <article class="card">
+              <span class="tag">AUDIT</span>
+              <h3>全链路本地审计</h3>
+              <p>SQLite、JSONL、压缩 payload blob 与 hash chain 保存每轮策略、数据、决策、风险、执行和复核。</p>
+            </article>
+            <article class="card">
+              <span class="tag">SAFETY</span>
+              <h3>默认 Dry-run</h3>
+              <p>真实交易需要显式打开双开关。审计工作台只读，不提供下单、撤单、转账或提现按钮。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="architecture">
+        <div class="wrap">
+          <h2>架构</h2>
+          <p class="flow">
+            Codex CLI → project-local skills → ccxt-mcp → exchange<br>
+            decision → risk gate → action → verification → local audit
+          </p>
+        </div>
+      </section>
+
+      <section id="quickstart">
+        <div class="wrap">
+          <h2>先从公共行情和 Dry-run 开始</h2>
+          <p class="section-lead">
+            <code>ccxt-mcp</code> 已发布为公开 OCI 镜像，并进入官方 MCP Registry。
+            不配置 API key 也可以先使用公共行情能力。
+          </p>
+          <pre><code>docker run --rm -i \
+  -e CCXT_ENABLE_TRADING=false \
+  -e CCXT_DRY_RUN=true \
+  ghcr.io/lucyfox199818-collab/ccxt-mcp:0.1.0</code></pre>
+          <div class="actions">
+            <a class="button" href="https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp">查看 Registry 记录</a>
+            <a class="button" href="https://github.com/lucyfox199818-collab/codex-binance-agent#安装项目">完整安装文档</a>
+          </div>
+        </div>
+      </section>
+
+      <section id="risk">
+        <div class="wrap">
+          <h2>风险边界</h2>
+          <div class="warning">
+            本项目是开源工程与交易自动化实验，不构成投资建议，不承诺收益。
+            合约和杠杆交易可能快速损失本金。请先使用公共行情、Dry-run 或测试环境，
+            并为真实账户使用独立、低权限、禁用提现且绑定 IP 白名单的 API key。
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        Codex Binance Agent v0.1.0 ·
+        <a href="https://github.com/lucyfox199818-collab/codex-binance-agent">Source</a> ·
+        <a href="https://github.com/lucyfox199818-collab/codex-binance-agent/issues">Issues</a>
+      </div>
+    </footer>
+  </body>
+</html>

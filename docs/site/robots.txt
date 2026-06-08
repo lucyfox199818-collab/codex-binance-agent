@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://lucyfox199818-collab.github.io/codex-binance-agent/sitemap.xml

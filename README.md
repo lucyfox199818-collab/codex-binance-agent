@@ -9,6 +9,7 @@
 永续合约，并在本地记录完整交易审计的项目。
 
 [GitHub 仓库](https://github.com/lucyfox199818-collab/codex-binance-agent)
+· [中文主页](https://lucyfox199818-collab.github.io/codex-binance-agent/)
 · [演示视频](demo/codex-binance-agent-demo.mp4)
 · [中文社区推广素材](docs/promotion/README.md)
 · [版本记录](CHANGELOG.md)
