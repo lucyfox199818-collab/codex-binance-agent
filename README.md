@@ -344,3 +344,8 @@ codex mcp get ccxt
 ### 修改 `.env` 后没有生效
 
 MCP 进程启动时读取环境变量。退出并重新启动 Codex 会话，让 Codex 重启 MCP 服务。
+
+## 联系方式
+
+- 微信：`mypcwza`
+- Telegram：`mypcwza`
