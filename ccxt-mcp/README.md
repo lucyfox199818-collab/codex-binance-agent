@@ -4,6 +4,8 @@
 
 MCP Registry 名称：`io.github.lucyfox199818-collab/ccxt-mcp`
 
+公开 OCI 镜像：`ghcr.io/lucyfox199818-collab/ccxt-mcp:0.1.0`
+
 ## 功能
 
 - 市场数据：markets、ticker、tickers、ticker summary、order book、trades、OHLCV、交易所状态、交易所时间、币种、手续费。
@@ -56,6 +58,17 @@ Codex MCP stdio 配置示例：
 ```
 
 ## Docker
+
+直接运行公开镜像：
+
+```bash
+docker run --rm -i \
+  -e CCXT_ENABLE_TRADING=false \
+  -e CCXT_DRY_RUN=true \
+  ghcr.io/lucyfox199818-collab/ccxt-mcp:0.1.0
+```
+
+或从源码构建：
 
 ```bash
 cd ccxt-mcp

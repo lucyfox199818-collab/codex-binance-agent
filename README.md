@@ -1,5 +1,10 @@
 # Codex Binance Agent
 
+[![CI](https://github.com/lucyfox199818-collab/codex-binance-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/lucyfox199818-collab/codex-binance-agent/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/lucyfox199818-collab/codex-binance-agent)](https://github.com/lucyfox199818-collab/codex-binance-agent/releases/latest)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-active-2ea44f)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp)
+[![Dry-run default](https://img.shields.io/badge/trading-dry--run%20default-3b82f6)](#配置交易所)
+
 这是一个让 Codex CLI 通过 MCP 读取加密货币市场、管理 Binance USDT-M
 永续合约，并在本地记录完整交易审计的项目。
 
@@ -7,6 +12,7 @@
 · [演示视频](demo/codex-binance-agent-demo.mp4)
 · [中文社区推广素材](docs/promotion/README.md)
 · [版本记录](CHANGELOG.md)
+· [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp)
 
 **30 秒了解项目：** Codex 负责当前会话内的研究和交易决策，`ccxt-mcp`
 提供行情、账户与交易工具，项目本地 skills 约束 V1/V2/V3 流程，
@@ -291,6 +297,31 @@ AUDIT_DATA_DIR=../state/audit npm run audit -- cooldowns list
 审计系统本身不会下单、撤单、改仓、转账或提现。
 
 ## Docker 运行 ccxt-mcp
+
+官方 Registry 名称：`io.github.lucyfox199818-collab/ccxt-mcp`
+
+无需本地构建，直接使用公开 GHCR 镜像：
+
+```bash
+docker run --rm -i \
+  -e CCXT_ENABLE_TRADING=false \
+  -e CCXT_DRY_RUN=true \
+  ghcr.io/lucyfox199818-collab/ccxt-mcp:0.1.0
+```
+
+注册到 Codex：
+
+```bash
+codex mcp add ccxt-container \
+  --env CCXT_ENABLE_TRADING=false \
+  --env CCXT_DRY_RUN=true -- \
+  docker run --rm -i \
+  -e CCXT_ENABLE_TRADING \
+  -e CCXT_DRY_RUN \
+  ghcr.io/lucyfox199818-collab/ccxt-mcp:0.1.0
+```
+
+也可以从源码构建：
 
 ```bash
 cd ccxt-mcp

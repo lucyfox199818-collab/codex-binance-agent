@@ -5,6 +5,9 @@
 - 仓库：https://github.com/lucyfox199818-collab/codex-binance-agent
 - 演示：https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/demo/codex-binance-agent-demo.mp4
 - 分享封面：[SVG](assets/social-preview.svg) · [PNG](assets/social-preview.png)
+- GitHub Release：https://github.com/lucyfox199818-collab/codex-binance-agent/releases/tag/v0.1.0
+- MCP Registry：https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp
+- 公开镜像：`ghcr.io/lucyfox199818-collab/ccxt-mcp:0.1.0`
 
 ## 一句话介绍
 
@@ -19,6 +22,7 @@
 4. 全链路审计：决策、风险、执行、复核写入 SQLite、JSONL 和 hash chain。
 5. 本地优先：密钥和审计数据保留在本机，审计界面不提供交易操作。
 6. 中文文档：安装、MCP 配置、策略调用、风控和常见问题均有中文说明。
+7. 正式分发：已发布公开 GHCR 镜像，并进入官方 MCP Registry。
 
 ## 适用人群
 

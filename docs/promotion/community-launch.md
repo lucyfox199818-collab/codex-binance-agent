@@ -17,12 +17,18 @@ https://github.com/lucyfox199818-collab/codex-binance-agent
 演示：
 https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/demo/codex-binance-agent-demo.mp4
 
+官方 MCP Registry：
+https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp
+
 它不是一段“帮我炒币”的提示词，主要由四部分组成：
 
 - `ccxt-mcp`：TypeScript MCP stdio 服务，显式注册 101 个行情、账户、订单和衍生品工具。
 - V1/V2/V3：单轮扫描、连续决策和自由裁量三种流程，各自有本地 skill 和风险边界。
 - `audit-system`：把每轮策略、数据、分析、决策、风控、执行和复核写入本地审计。
 - `trading-intel`：只读 MCP，用于查询历史轮次并补充 CoinGecko、DefiLlama 公共数据。
+
+`ccxt-mcp` 已发布为公开 OCI 镜像：
+`ghcr.io/lucyfox199818-collab/ccxt-mcp:0.1.0`。
 
 我最在意的是安全边界：
 
