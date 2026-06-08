@@ -10,6 +10,8 @@
 - `V1.txt`、`V2.txt`、`V3.txt`：三套交易策略和风险边界。
 - `.cursor/skills/trading-v*/`：Codex 执行对应策略时必须遵循的项目本地 skills。
 
+项目演示视频：[Codex Binance Agent dry-run demo](demo/codex-binance-agent-demo.mp4)
+
 > 风险提示：本项目可以提交真实合约订单。默认配置关闭真实交易并启用
 > dry-run。请先在 dry-run 或 Binance 测试环境中验证。任何策略、模型或示例都不保证盈利，
 > 杠杆交易可能导致本金快速损失。
