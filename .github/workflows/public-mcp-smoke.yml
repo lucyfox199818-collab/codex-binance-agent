@@ -1,0 +1,26 @@
+name: Public MCP smoke
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/public-mcp-smoke.yml
+      - scripts/public-mcp-smoke.sh
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-market-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Verify public MCP image, safety gates, and ticker
+        run: ./scripts/public-mcp-smoke.sh

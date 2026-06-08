@@ -6,6 +6,7 @@
 - 中文主页：https://raw.githack.com/lucyfox199818-collab/codex-binance-agent/main/docs/site/index.html
 - 演示：https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/demo/codex-binance-agent-demo.mp4
 - 分享封面：[SVG](assets/social-preview.svg) · [PNG](assets/social-preview.png)
+- 实战教程：[5 分钟无 Key 验证 MCP 与公开行情](../guides/5-minute-public-dry-run-zh.md)
 - GitHub Release：https://github.com/lucyfox199818-collab/codex-binance-agent/releases/tag/v0.1.0
 - MCP Registry：https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp
 - 公开镜像：`ghcr.io/lucyfox199818-collab/ccxt-mcp:0.1.0`

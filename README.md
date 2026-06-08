@@ -3,6 +3,7 @@
 [![CI](https://github.com/lucyfox199818-collab/codex-binance-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/lucyfox199818-collab/codex-binance-agent/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/lucyfox199818-collab/codex-binance-agent)](https://github.com/lucyfox199818-collab/codex-binance-agent/releases/latest)
 [![MCP Registry](https://img.shields.io/badge/MCP_Registry-active-2ea44f)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp)
+[![Public MCP smoke](https://github.com/lucyfox199818-collab/codex-binance-agent/actions/workflows/public-mcp-smoke.yml/badge.svg)](https://github.com/lucyfox199818-collab/codex-binance-agent/actions/workflows/public-mcp-smoke.yml)
 [![Dry-run default](https://img.shields.io/badge/trading-dry--run%20default-3b82f6)](#配置交易所)
 
 这是一个让 Codex CLI 通过 MCP 读取加密货币市场、管理 Binance USDT-M
@@ -12,6 +13,7 @@
 · [中文主页](https://raw.githack.com/lucyfox199818-collab/codex-binance-agent/main/docs/site/index.html)
 · [演示视频](demo/codex-binance-agent-demo.mp4)
 · [中文社区推广素材](docs/promotion/README.md)
+· [5 分钟公开行情教程](docs/guides/5-minute-public-dry-run-zh.md)
 · [版本记录](CHANGELOG.md)
 · [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp)
 · [中文试用反馈](https://github.com/lucyfox199818-collab/codex-binance-agent/issues/1)
