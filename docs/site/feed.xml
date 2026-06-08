@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Codex Binance Agent Updates</title>
+    <link>https://raw.githack.com/lucyfox199818-collab/codex-binance-agent/main/docs/site/index.html</link>
+    <description>Codex CLI, MCP, CCXT, dry-run safety, and trading audit project updates.</description>
+    <language>zh-CN</language>
+    <lastBuildDate>Mon, 08 Jun 2026 12:00:00 GMT</lastBuildDate>
+    <item>
+      <title>5 分钟无 API Key 验证公开 MCP 行情</title>
+      <link>https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/docs/guides/5-minute-public-dry-run-zh.md</link>
+      <guid isPermaLink="true">https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/docs/guides/5-minute-public-dry-run-zh.md</guid>
+      <pubDate>Mon, 08 Jun 2026 11:58:50 GMT</pubDate>
+      <description>使用公开 OCI 镜像验证 MCP 初始化、无凭据、安全开关和公开永续合约行情。</description>
+    </item>
+    <item>
+      <title>ccxt-mcp 进入官方 MCP Registry</title>
+      <link>https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp</link>
+      <guid isPermaLink="true">https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp</guid>
+      <pubDate>Mon, 08 Jun 2026 11:45:36 GMT</pubDate>
+      <description>公开 GHCR 镜像通过所有权验证，Registry 状态为 active。</description>
+    </item>
+    <item>
+      <title>Codex Binance Agent v0.1.0</title>
+      <link>https://github.com/lucyfox199818-collab/codex-binance-agent/releases/tag/v0.1.0</link>
+      <guid isPermaLink="true">https://github.com/lucyfox199818-collab/codex-binance-agent/releases/tag/v0.1.0</guid>
+      <pubDate>Mon, 08 Jun 2026 11:40:52 GMT</pubDate>
+      <description>首个公开基线版本，包含 CCXT MCP、本地交易 skills、dry-run 门禁与全链路审计。</description>
+    </item>
+  </channel>
+</rss>

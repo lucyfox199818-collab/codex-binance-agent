@@ -17,6 +17,7 @@
 · [版本记录](CHANGELOG.md)
 · [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp)
 · [中文试用反馈](https://github.com/lucyfox199818-collab/codex-binance-agent/issues/1)
+· [安全报告](SECURITY.md)
 
 **30 秒了解项目：** Codex 负责当前会话内的研究和交易决策，`ccxt-mcp`
 提供行情、账户与交易工具，项目本地 skills 约束 V1/V2/V3 流程，

@@ -1,0 +1,42 @@
+# Codex Binance Agent
+
+> A dry-run-first, auditable Codex CLI trading experiment built with MCP, CCXT, project-local
+> trading skills, and a local SQLite/JSONL/hash-chain audit system.
+
+Primary language: Chinese (zh-CN)
+
+## Canonical Resources
+
+- [Source repository](https://github.com/lucyfox199818-collab/codex-binance-agent)
+- [Chinese README](https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/README.md)
+- [Five-minute public MCP tutorial](https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/docs/guides/5-minute-public-dry-run-zh.md)
+- [Release v0.1.0](https://github.com/lucyfox199818-collab/codex-binance-agent/releases/tag/v0.1.0)
+- [Official MCP Registry record](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.lucyfox199818-collab%2Fccxt-mcp)
+- [Public OCI image](https://github.com/lucyfox199818-collab/codex-binance-agent/pkgs/container/ccxt-mcp)
+- [Chinese trial feedback](https://github.com/lucyfox199818-collab/codex-binance-agent/issues/1)
+- [Security policy](https://github.com/lucyfox199818-collab/codex-binance-agent/blob/main/SECURITY.md)
+
+## Components
+
+- `ccxt-mcp`: 101 explicitly registered MCP tools for market data, accounts, orders, derivatives,
+  protected entries, and guarded account actions.
+- `audit-system`: local recorder, read-only workbench, SQLite/JSONL/blob persistence, hash-chain
+  verification, cooldown registry, and `trading-intel` MCP.
+- `V1.txt`, `V2.txt`, `V3.txt`: strategy definitions and risk boundaries.
+- `.cursor/skills/trading-v*/SKILL.md`: project-local execution and audit discipline.
+
+## Safety Facts
+
+- Live trading is disabled by default: `CCXT_ENABLE_TRADING=false`.
+- Mutating tools are dry-run by default: `CCXT_DRY_RUN=true`.
+- Exchange credentials are optional for public market data.
+- The audit UI has no order, transfer, withdrawal, leverage, or margin controls.
+- This project is not investment advice and does not promise profit.
+
+## Verification
+
+- `ccxt-mcp`: 30 automated tests.
+- `audit-system`: 33 automated tests.
+- CI runs tests, typechecks, and production builds.
+- A scheduled public smoke test pulls the OCI image without credentials, verifies safety gates, and
+  reads a public ticker.
