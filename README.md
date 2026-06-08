@@ -6,6 +6,7 @@
 [GitHub 仓库](https://github.com/lucyfox199818-collab/codex-binance-agent)
 · [演示视频](demo/codex-binance-agent-demo.mp4)
 · [中文社区推广素材](docs/promotion/README.md)
+· [版本记录](CHANGELOG.md)
 
 **30 秒了解项目：** Codex 负责当前会话内的研究和交易决策，`ccxt-mcp`
 提供行情、账户与交易工具，项目本地 skills 约束 V1/V2/V3 流程，

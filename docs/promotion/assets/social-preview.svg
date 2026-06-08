@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="0.55" stop-color="#0b1d31"/>
+      <stop offset="1" stop-color="#102941"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#30d5c8"/>
+      <stop offset="1" stop-color="#56a8ff"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#8ec8ef" stroke-opacity="0.07" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#background)"/>
+  <rect width="1280" height="640" fill="url(#grid)"/>
+  <circle cx="1080" cy="100" r="230" fill="#1b6f91" opacity="0.12"/>
+  <circle cx="1130" cy="560" r="290" fill="#b88b2a" opacity="0.08"/>
+
+  <g font-family="Noto Sans CJK SC, Source Han Sans SC, Microsoft YaHei, sans-serif">
+    <text x="78" y="110" fill="#58d5ca" font-size="24" font-weight="700" letter-spacing="3">
+      OPEN SOURCE · CODEX CLI · MCP
+    </text>
+    <text x="76" y="196" fill="#f3f8fc" font-size="61" font-weight="800">
+      Codex Binance Agent
+    </text>
+    <rect x="78" y="226" width="650" height="5" rx="2.5" fill="url(#accent)"/>
+    <text x="78" y="286" fill="#c7d9e8" font-size="29" font-weight="600">
+      MCP 交易工具 · 默认 Dry-run · 全链路审计
+    </text>
+
+    <g transform="translate(78 344)">
+      <rect width="186" height="76" rx="15" fill="#0d2c3e" stroke="#31d4c8" stroke-width="2"/>
+      <text x="93" y="31" fill="#66e1d8" font-size="17" font-weight="700" text-anchor="middle">CCXT MCP</text>
+      <text x="93" y="56" fill="#e7f5f8" font-size="24" font-weight="800" text-anchor="middle">101 tools</text>
+    </g>
+    <g transform="translate(282 344)">
+      <rect width="186" height="76" rx="15" fill="#102b46" stroke="#58aaff" stroke-width="2"/>
+      <text x="93" y="31" fill="#85c3ff" font-size="17" font-weight="700" text-anchor="middle">LOCAL SKILLS</text>
+      <text x="93" y="56" fill="#e7f5f8" font-size="24" font-weight="800" text-anchor="middle">V1 · V2 · V3</text>
+    </g>
+    <g transform="translate(486 344)">
+      <rect width="242" height="76" rx="15" fill="#20283b" stroke="#d0a348" stroke-width="2"/>
+      <text x="121" y="31" fill="#edc56b" font-size="17" font-weight="700" text-anchor="middle">LOCAL AUDIT</text>
+      <text x="121" y="56" fill="#e7f5f8" font-size="21" font-weight="800" text-anchor="middle">SQLite · JSONL · Hash</text>
+    </g>
+
+    <text x="78" y="500" fill="#8fa9bc" font-size="21">
+      行情读取 → 账户检查 → 风险门禁 → 执行复核 → 本地复盘
+    </text>
+    <text x="78" y="566" fill="#f2c665" font-size="19" font-weight="700">
+      工程实验 · 不构成投资建议 · 合约交易可能损失本金
+    </text>
+  </g>
+
+  <g transform="translate(830 128)">
+    <path d="M100 42 C170 42 170 42 228 42" stroke="#41cdc5" stroke-width="3" stroke-dasharray="8 8" opacity="0.8"/>
+    <path d="M228 42 C285 42 285 116 342 116" stroke="#4ca9ef" stroke-width="3" stroke-dasharray="8 8" opacity="0.8"/>
+    <path d="M228 42 C285 42 285 216 342 216" stroke="#d7aa50" stroke-width="3" stroke-dasharray="8 8" opacity="0.8"/>
+    <path d="M228 42 C285 42 285 316 342 316" stroke="#53c6b9" stroke-width="3" stroke-dasharray="8 8" opacity="0.8"/>
+
+    <rect x="0" y="0" width="128" height="84" rx="18" fill="#0d2c3e" stroke="#40d7cb" stroke-width="3"/>
+    <path d="M31 28 l18 14 -18 14 M57 58 h36" fill="none" stroke="#e8fbff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <circle cx="228" cy="42" r="48" fill="#142f48" stroke="#58aaff" stroke-width="3" filter="url(#glow)"/>
+    <circle cx="228" cy="42" r="11" fill="#63b5ff"/>
+    <circle cx="228" cy="18" r="5" fill="#dff3ff"/>
+    <circle cx="249" cy="54" r="5" fill="#dff3ff"/>
+    <circle cx="207" cy="54" r="5" fill="#dff3ff"/>
+    <path d="M228 18 L228 42 L249 54 M228 42 L207 54" fill="none" stroke="#dff3ff" stroke-width="3"/>
+
+    <g transform="translate(342 76)">
+      <path d="M0 30 L45 10 L90 30 V63 C90 92 69 112 45 121 C21 112 0 92 0 63 Z" fill="#153d4a" stroke="#4dd7c9" stroke-width="3"/>
+      <path d="M25 62 L39 76 L68 46" fill="none" stroke="#7ce8dd" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <g transform="translate(342 190)">
+      <rect width="100" height="84" rx="13" fill="#263041" stroke="#d8aa50" stroke-width="3"/>
+      <path d="M24 23 h52 M24 42 h52 M24 61 h32" stroke="#f4d481" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="75" cy="62" r="7" fill="#55d1c5"/>
+    </g>
+
+    <g transform="translate(342 304)">
+      <circle cx="50" cy="42" r="43" fill="#122f43" stroke="#58aaff" stroke-width="3"/>
+      <path d="M24 48 L41 65 L76 26" fill="none" stroke="#74c7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
